@@ -31,6 +31,8 @@ gs1_attributes_set = set(gs1_df_attributes_brick_active['FieldID'].dropna())
 # Read metadata for attributes
 gs1_df_attributes = pd.read_excel(gs1_file_path, sheet_name='Fielddefinitions', skiprows=3, dtype=str)
 
+# Read picklists
+gs1_df_picklists = pd.read_excel(gs1_file_path, sheet_name='Picklists', skiprows=3, dtype=str)
 
 ###################
 ## Maxeda datamodel
@@ -73,6 +75,8 @@ def extract_brick_code(definition):
 
 maxeda_df['Attribute code'] = maxeda_df['Definition'].apply(extract_brick_code)
 
+#vanaf 15e karakter
+
 
 
 # Exclude maxeda-attributes
@@ -88,10 +92,10 @@ attribute_add_set = gs1_attributes_set - maxeda_attribute_set
 attribute_delete_set = maxeda_attribute_set - gs1_attributes_set
 
 # print(len(attribute_add_set))
-print(len(attribute_delete_set))
+# print(len(attribute_delete_set))
 
 # print(attribute_add_set)
-print(attribute_delete_set)
+# print(attribute_delete_set)
 
 ####################
 ## Delete
@@ -100,45 +104,19 @@ print(attribute_delete_set)
 delete_attributes_df = maxeda_df[maxeda_df['Attribute code'].isin(attribute_delete_set)]
 delete_attributes_df['Action']  = 'Delete'
 
-print(delete_attributes_df)
+# print(delete_attributes_df)
 
 ####################
 ## Additions
 ####################
 
 # Get relevant rows from attribute overview
-gs1_addition_attributes = gs1_df_attributes[gs1_df_attributes['FieldID'].isin(attribute_add_set)]
+additions_attributes_df = gs1_df_attributes[gs1_df_attributes['FieldID'].isin(attribute_add_set)]
 
-# Add data type
-gs1_addition_attributes['INPUT_Data_type'] = gs1_addition_attributes.apply(
-    lambda row: 'DateTime' if row['Format'] == 'DateTime'
-                else 'String' if row['Format'] in ['Text', 'Picklist (T/F)', 'Picklist', 'Boolean']  # Added 'Boolean' here
-                else 'Integer' if (row['Format'] == 'Number' or row['Format'] == 'NumberPicklist') and row['Deci-\nmals'] == '0'
-                else 'Decimal' if row['Format'] == 'Number' or row['Format'] == 'NumberPicklist'
-                else 'Unknown', axis=1)
-
-# Create an empty DataFrame with the same columns as maxeda_df
-additions_attributes_df = pd.DataFrame(columns=maxeda_df.columns)
-
-# Temporary list to hold all the new rows before concatenating them into the DataFrame
-new_rows = []
-
-# Iterate over the set to fill the DataFrame
-for field_id in attribute_add_set:
-    # Find the corresponding attribute name in gs1_df_attributes
-    attribute_name_long = gs1_df_attributes.loc[gs1_df_attributes['FieldID'] == field_id, 'Attributename English'].iloc[0] if not gs1_df_attributes.loc[gs1_df_attributes['FieldID'] == field_id, 'Attributename English'].empty else ''
-    
-    if attribute_name_long.endswith(')'):
-        # Find the last occurrence of "(" and extract the string up to that point (excluding the last "(" and everything after)
-        attribute_name = attribute_name_long[:attribute_name_long.rfind('(')].strip()
-    else:
-        attribute_name = attribute_name_long.strip()
-
-    description = gs1_df_attributes.loc[gs1_df_attributes['FieldID'] == field_id, 'Definition English'].iloc[0] if not gs1_df_attributes.loc[gs1_df_attributes['FieldID'] == field_id, 'Definition English'].empty else ''
-    format = gs1_df_attributes.loc[gs1_df_attributes['FieldID'] == field_id, 'Format'].iloc[0] if not gs1_df_attributes.loc[gs1_df_attributes['FieldID'] == field_id, 'Format'].empty else ''
-    decimals = gs1_df_attributes.loc[gs1_df_attributes['FieldID'] == field_id, 'Deci-\nmals'].iloc[0] if not gs1_df_attributes.loc[gs1_df_attributes['FieldID'] == field_id, 'Deci-\nmals'].empty else ''
-
-    # Determine data_type based on 'Format' and 'Decimals'
+# Data Type and display type
+def determine_types(row):
+    format = row['Format']
+    decimals = row['Deci-\nmals']
     if format == "Number":
         data_type = "Integer" if decimals == 0 else "Decimal"
         display_type = "NumericTextBox"
@@ -147,7 +125,7 @@ for field_id in attribute_add_set:
         display_type = "DateTime"
     elif format == "Text":
         data_type = "String"
-        display_type = "t.b.d" # to discuss when text box, when text ares
+        display_type = "TextBox" 
     elif format == "Picklist (T/F)":
         data_type = "String"
         display_type = "LookupTable"
@@ -163,85 +141,126 @@ for field_id in attribute_add_set:
     else:
         data_type = "Unknown"
         display_type = "Unknown"
+    return pd.Series([data_type, display_type], index=['INPUT_Data_type', 'INPUT_Display_type'])
 
-    if data_type == "Decimal":
-        is_inheritable = "NO" # to discuss
-        is_lookup = "NO"
-        show_at_entity_creation = "YES" # to discuss
-        precision = decimals
-        use_arbitrary_precision = "NO"
-        allowable_values= ''
-        lookup_table_name= ''
-        lookup_display_columns= ''	
-        lookup_search_columns= ''
-        lookup_display_format= ''
-        lookup_sort_order= ''
-        export_format= ''
-    elif data_type == "Integer":
-        is_inheritable = "NO" 
-        is_lookup = "NO"
-        show_at_entity_creation = "YES"
-        precision = ''
-        use_arbitrary_precision = ''
-        allowable_values= ''
-        lookup_table_name= ''
-        lookup_display_columns= '' 	
-        lookup_search_columns= ''
-        lookup_display_format= ''
-        lookup_sort_order= ''
-        export_format= ''
+# Apply the function to each row of the dataframe
+additions_attributes_df[['INPUT_Data_type', 'INPUT_Display_type']] = additions_attributes_df.apply(determine_types, axis=1)
 
-    # Create the new row data
-    new_row = {
-        'Attribute Type': 'Category',
-        'Attribute Name': f"CatSpec_{attribute_name}",
-        'Attribute Long Name': attribute_name_long,
-        'Attribute Parent Name': 'Category Specific Attributes',
-        'Data Type' : data_type,
-        'Display Type' : display_type,
-        # 'Is Collection' : 't.b.d',
-        'Is Inheritable' : is_inheritable,
-        'Is Localizable': 'NO',
-        'Is Complex': 'NO',
-        'Is Lookup' : is_lookup,
-        'Is Required': 'NO',
-        'Is ReadOnly': 'NO',
-        'Is Hidden': 'NO',
-        'Show At Entity Creation?': show_at_entity_creation,
-        'Is Searchable': 'YES',
-        'Is Null Value Search Required': 'YES',
-        'Minimum Length': 0,
-        'Maximum Length': 0,
-        'Precision' : precision,
-        'Use Arbitrary Precision?' : use_arbitrary_precision,
-        # 'UOM Type': 't.b.d.',
-        'Allowed UOMs': 't.d.b.',	
-        # 'Default UOM': 't.b.d.',
-        'Allowable Values':	allowable_values,
-        'LookUp Table Name': lookup_table_name,	
-        'Lookup Display Columns': lookup_display_columns,	
-        'Lookup Search Columns': lookup_search_columns,	
-        'Lookup Display Format': lookup_display_format,	
-        'Lookup Sort Order': lookup_sort_order,	
-        'Export Format': export_format,
-        # 'Sort Order' : 't.b.d',
-        'Definition': f"GS1 Field_ID {field_id} {description}",
-        'Enable History': 'YES',
-        'Apply Time Zone Conversion': 'NO',
-        'Is UOM Localizable': 'NO'
-    }
-    
-    # Add the new row to the list
-    new_rows.append(new_row)
+# 
+additions_attributes_df['INPUT_Attribute_name'] = additions_attributes_df['Attributename English'].apply(
+                                                lambda x: x[:x.rfind('(')].strip() if '(' in x and x.endswith(')') else x.strip()
+                                            ).apply(lambda x: f"CatSpec_{x}")
 
-# Convert the list of dictionaries to DataFrame and concatenate it to the existing DataFrame
-additions_attributes_df = pd.concat([additions_attributes_df, pd.DataFrame(new_rows)], ignore_index=True)
+# INPUT_Lookup_table_name
+additions_attributes_df['INPUT_Lookup_table_name'] = np.select(
+    [
+        additions_attributes_df['Format'].isin(["Picklist (T/F)", "Boolean"]),
+        additions_attributes_df['Format'] == "Picklist"
+    ],
+    [
+        "YesNo",
+        additions_attributes_df['INPUT_Attribute_name'].str.replace(r'\s+', '', regex=True).str.strip()
+    ],
+    default=""
+)
 
-# Set default values for other columns not included in new_row if necessary
+# Add INPUT_Allowed_uoms
+# Merge additions_attributes_df with gs1_df_picklists on 'Picklist ID'
+merged_df = pd.merge(additions_attributes_df, gs1_df_picklists, on='Picklist ID', how='left')
+
+# Group by 'Picklist ID' and join 'Code value' with '||'
+code_values = merged_df.groupby('Picklist ID')['Code value'].apply('||'.join)
+
+# Map the aggregated code values back to the original additions_attributes_df DataFrame
+additions_attributes_df['INPUT_Allowed_uoms'] = additions_attributes_df['Picklist ID'].map(code_values)
+
+# Fill NaNs with empty strings if any picklist IDs didn't have code values
+additions_attributes_df['INPUT_Allowed_uoms'].fillna('', inplace=True)
+
+#Fill the table
+additions_attributes_df['ID'] = ''
+additions_attributes_df['Action'] = ''
+additions_attributes_df['Unique Identifier'] = ''
+additions_attributes_df['Attribute Type'] = 'Category'
+additions_attributes_df['Attribute Name'] = additions_attributes_df['INPUT_Attribute_name']
+additions_attributes_df['Attribute Long Name'] = additions_attributes_df['Attributename English']
+additions_attributes_df['Attribute Parent Name'] = 'Category Specific Attributes'
+additions_attributes_df['Data Type'] = additions_attributes_df['INPUT_Data_type']
+additions_attributes_df['Display Type'] = additions_attributes_df['INPUT_Display_type']
+additions_attributes_df['Is Collection'] = np.where(
+                                            additions_attributes_df['Repeat'].str.len() > 0, 'YES', 'NO'
+                                        )
+additions_attributes_df['Is Inheritable'] = 'NO' #For OneWS is 'YES' bij picklisten en numberpicklisten
+additions_attributes_df['Is Localizable'] = 'NO'
+additions_attributes_df['Is Complex'] = 'NO'
+additions_attributes_df['Is Lookup'] =  np.where(additions_attributes_df['INPUT_Display_type'] == 'LookupTable', 'YES', 'NO')
+additions_attributes_df['Is Required'] = 'NO'
+additions_attributes_df['Is ReadOnly'] = 'NO'
+additions_attributes_df['Is Hidden'] = 'NO'
+additions_attributes_df['Show At Entity Creation?'] = 'YES'
+additions_attributes_df['Is Searchable'] = 'YES'
+additions_attributes_df['Is Null Value Search Required'] = 'YES'
+additions_attributes_df['Generate Report Table Column?'] = ''
+additions_attributes_df['Default Value'] = ''
+additions_attributes_df['Minimum Length'] = 0  
+additions_attributes_df['Maximum Length'] = 0  
+additions_attributes_df['Range From'] = ''
+additions_attributes_df['Is Range From Inclusive'] = ''
+additions_attributes_df['Range To'] = ''
+additions_attributes_df['Is Range To Inclusive'] = ''
+additions_attributes_df['Precision'] = additions_attributes_df['Deci-\nmals']
+additions_attributes_df['Use Arbitrary Precision?'] = np.where(
+                                                        additions_attributes_df['Deci-\nmals'].str.len() > 0, 'NO', 'YES'
+                                                    )
+additions_attributes_df['UOM Type'] = np.where(additions_attributes_df['Format'] == 'NumberPicklist', 'Custom UOM', '') #numberbicklist ? --> "CustomUOM",  bij onews "gdsn uom"
+additions_attributes_df['Allowed UOMs'] = np.where(additions_attributes_df['Format'] == 'NumberPicklist', additions_attributes_df['INPUT_Allowed_uoms'],'') #ONLY FOR numberbicklist
+additions_attributes_df['Default UOM'] = np.where(additions_attributes_df['Format'] == 'NumberPicklist', additions_attributes_df['UoM fixed'],'')
+additions_attributes_df['Allowable Values'] = ''
+additions_attributes_df['LookUp Table Name'] = additions_attributes_df['INPUT_Lookup_table_name']
+additions_attributes_df['Lookup Display Columns'] = additions_attributes_df['LookUp Table Name']
+additions_attributes_df['Lookup Search Columns'] = additions_attributes_df['LookUp Table Name']
+additions_attributes_df['Lookup Display Format'] = additions_attributes_df['LookUp Table Name']
+additions_attributes_df['Lookup Sort Order'] = additions_attributes_df['LookUp Table Name']
+additions_attributes_df['Export Format'] = additions_attributes_df['LookUp Table Name']
+additions_attributes_df['Sort Order'] = 0
+additions_attributes_df['Definition'] = ("GS1 Field_ID " + 
+                                         additions_attributes_df['FieldID'].astype(str) + " " + 
+                                         additions_attributes_df['Definition English'])
+additions_attributes_df['Example'] = ''
+additions_attributes_df['Business Rule'] = ''
+additions_attributes_df['Label'] = ''
+additions_attributes_df['Extension'] = ''
+additions_attributes_df['Web URI'] = ''
+additions_attributes_df['Enable History'] = 'YES'
+additions_attributes_df['Apply Time Zone Conversion'] = 'NO'
+additions_attributes_df['Attribute Regular Expression'] = ''
+additions_attributes_df['Is UOM Localizable'] = 'NO'
+
 additions_attributes_df.fillna('', inplace=True)
 
-print(additions_attributes_df)
+# Create an empty DataFrame with the same columns as maxeda_df
+additions_attributes_df = pd.DataFrame(columns=maxeda_df.columns)
 
+columns = [
+    "ID", "Action", "Unique Identifier", "Attribute Type", "Attribute Name",
+    "Attribute Long Name", "Attribute Parent Name", "Data Type", "Display Type",
+    "Is Collection", "Is Inheritable", "Is Localizable", "Is Complex", "Is Lookup",
+    "Is Required", "Is ReadOnly", "Is Hidden", "Show At Entity Creation?", "Is Searchable",
+    "Is Null Value Search Required", "Generate Report Table Column?", "Default Value",
+    "Minimum Length", "Maximum Length", "Range From", "Is Range From Inclusive",
+    "Range To", "Is Range To Inclusive", "Precision", "Use Arbitrary Precision?",
+    "UOM Type", "Allowed UOMs", "Default UOM", "Allowable Values", "LookUp Table Name",
+    "Lookup Display Columns", "Lookup Search Columns", "Lookup Display Format",
+    "Lookup Sort Order", "Export Format", "Sort Order", "Definition", "Example",
+    "Business Rule", "Label", "Extension", "Web URI", "Enable History",
+    "Apply Time Zone Conversion", "Attribute Regular Expression", "Is UOM Localizable"
+]
+
+# Filter columns
+additions_attributes_df = additions_attributes_df.loc[:, columns]
+
+print(additions_attributes_df)
+exit()
 
 ###################
 ## Write output
