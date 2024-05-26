@@ -39,10 +39,10 @@ gs1_df_picklists = pd.read_excel(gs1_file_path, sheet_name='Picklists', skiprows
 ###################
 print(f'### Read Maxeda datamodel ###')
 # Read the 'S9 - Category' sheet from the Datamodel file
-maxeda_df = pd.read_excel(datamodel_file_path, sheet_name='S7 - Attribute', dtype=str)
+maxeda_s7_df = pd.read_excel(datamodel_file_path, sheet_name='S7 - Attribute')
 
 # Select relevant attributes
-maxeda_df = maxeda_df[maxeda_df['Attribute Type'] == 'Category']
+maxeda_s7_df = maxeda_s7_df[maxeda_s7_df['Attribute Type'] == 'Category']
 
 # Extract attribute code from Definition after "GS1 Field_ID "
 # def extract_brick_code(definition):
@@ -73,16 +73,20 @@ def extract_brick_code(definition):
         return match.group(1).strip()  # Extract and return the part after 'id '
     return ''  # Return an empty string if no match is found
 
-maxeda_df['Attribute code'] = maxeda_df['Definition'].apply(extract_brick_code)
+maxeda_s7_df['Attribute code'] = maxeda_s7_df['Definition'].apply(extract_brick_code)
 
 #vanaf 15e karakter
 
 
-
 # Exclude maxeda-attributes
-maxeda_df = maxeda_df[~maxeda_df['Attribute code'].str.startswith("M")]
+maxeda_s7_df = maxeda_s7_df[~maxeda_s7_df['Attribute code'].str.startswith("M")]
 
-maxeda_attribute_set = set(maxeda_df['Attribute code'].replace('', np.nan).dropna())
+maxeda_attribute_set = set(maxeda_s7_df['Attribute code'].replace('', np.nan).dropna())
+
+
+# Read S8 - locale
+# maxeda_s8_df = pd.read_excel(datamodel_file_path, sheet_name='S8 - Attribute - Locale')
+
 
 ####################
 ## Compare
@@ -101,8 +105,14 @@ attribute_delete_set = maxeda_attribute_set - gs1_attributes_set
 ## Delete
 ####################
 
-delete_attributes_df = maxeda_df[maxeda_df['Attribute code'].isin(attribute_delete_set)]
+delete_attributes_df = maxeda_s7_df[maxeda_s7_df['Attribute code'].isin(attribute_delete_set)].copy()
 delete_attributes_df['Action']  = 'Delete'
+
+# Convert the 'Precision' column to string type
+delete_attributes_df['Precision'] = delete_attributes_df['Precision'].astype(str)
+
+delete_attributes_df.drop(columns='Attribute code', inplace=True)
+
 
 # print(delete_attributes_df)
 
@@ -111,14 +121,14 @@ delete_attributes_df['Action']  = 'Delete'
 ####################
 
 # Get relevant rows from attribute overview
-additions_attributes_df = gs1_df_attributes[gs1_df_attributes['FieldID'].isin(attribute_add_set)]
+additions_attributes_df = gs1_df_attributes[gs1_df_attributes['FieldID'].isin(attribute_add_set)].copy()
 
 # Data Type and display type
 def determine_types(row):
     format = row['Format']
     decimals = row['Deci-\nmals']
     if format == "Number":
-        data_type = "Integer" if decimals == 0 else "Decimal"
+        data_type = "Integer" if decimals == '0' else "Decimal"
         display_type = "NumericTextBox"
     elif format == "DateTime":
         data_type = "DateTime"
@@ -133,7 +143,7 @@ def determine_types(row):
         data_type = "String"
         display_type = "LookupTable"
     elif format == "NumberPicklist":
-        data_type = "Integer" if decimals == 0 else "Decimal"
+        data_type = "Integer" if decimals == '0' else "Decimal"
         display_type = "NumericTextBox"
     elif format == "Boolean":
         data_type = "String"
@@ -165,17 +175,14 @@ additions_attributes_df['INPUT_Lookup_table_name'] = np.select(
 )
 
 # Add INPUT_Allowed_uoms
-# Merge additions_attributes_df with gs1_df_picklists on 'Picklist ID'
-merged_df = pd.merge(additions_attributes_df, gs1_df_picklists, on='Picklist ID', how='left')
+code_value_concat = gs1_df_picklists.groupby('Picklist ID')['Code value'].apply(lambda x: '||'.join(x.dropna().astype(str))).rename('INPUT_Allowed_uoms')
 
-# Group by 'Picklist ID' and join 'Code value' with '||'
-code_values = merged_df.groupby('Picklist ID')['Code value'].apply('||'.join)
-
-# Map the aggregated code values back to the original additions_attributes_df DataFrame
-additions_attributes_df['INPUT_Allowed_uoms'] = additions_attributes_df['Picklist ID'].map(code_values)
+# Using a left join ensures all original rows in additions_attributes_df are retained
+additions_attributes_df = additions_attributes_df.merge(code_value_concat, on='Picklist ID', how='left')
 
 # Fill NaNs with empty strings if any picklist IDs didn't have code values
-additions_attributes_df['INPUT_Allowed_uoms'].fillna('', inplace=True)
+additions_attributes_df['INPUT_Allowed_uoms'] = additions_attributes_df['INPUT_Allowed_uoms'].fillna('')
+
 
 #Fill the table
 additions_attributes_df['ID'] = ''
@@ -208,9 +215,9 @@ additions_attributes_df['Range From'] = ''
 additions_attributes_df['Is Range From Inclusive'] = ''
 additions_attributes_df['Range To'] = ''
 additions_attributes_df['Is Range To Inclusive'] = ''
-additions_attributes_df['Precision'] = additions_attributes_df['Deci-\nmals']
+additions_attributes_df['Precision'] = additions_attributes_df['Precision'] = additions_attributes_df['Deci-\nmals'].replace('0', '')
 additions_attributes_df['Use Arbitrary Precision?'] = np.where(
-                                                        additions_attributes_df['Deci-\nmals'].str.len() > 0, 'NO', 'YES'
+                                                        additions_attributes_df['Precision'].str.len() > 0, 'NO', ''
                                                     )
 additions_attributes_df['UOM Type'] = np.where(additions_attributes_df['Format'] == 'NumberPicklist', 'Custom UOM', '') #numberbicklist ? --> "CustomUOM",  bij onews "gdsn uom"
 additions_attributes_df['Allowed UOMs'] = np.where(additions_attributes_df['Format'] == 'NumberPicklist', additions_attributes_df['INPUT_Allowed_uoms'],'') #ONLY FOR numberbicklist
@@ -238,9 +245,56 @@ additions_attributes_df['Is UOM Localizable'] = 'NO'
 
 additions_attributes_df.fillna('', inplace=True)
 
-# Create an empty DataFrame with the same columns as maxeda_df
-additions_attributes_df = pd.DataFrame(columns=maxeda_df.columns)
+# OneWs attributes
+additions_attributes_onews_df = additions_attributes_df.copy()
 
+# Setting 'Attribute Type' to 'Common' for all rows
+additions_attributes_onews_df['Attribute Type'] = 'Common'
+
+# Replacing 'CatSpec' with 'OneWS' in 'Attribute Name' and removing all spaces
+additions_attributes_onews_df['Attribute Name'] = additions_attributes_onews_df['Attribute Name'].str.replace('CatSpec', 'OneWS').str.replace(' ', '')
+
+
+
+# Adjust Is Inheritable for OneWs
+additions_attributes_onews_df['Is Inheritable'] = np.where(
+    (additions_attributes_df['Format'] == 'NumberPicklist') | (additions_attributes_df['Format'] == 'Picklist'),
+    'YES',  # Set to 'YES' if 'Format' is either 'NumberPicklist' or 'Picklist'
+    additions_attributes_onews_df['Is Inheritable']  # Keep the original value if conditions are False
+)
+
+# List of columns to set to empty strings
+columns_to_clear = [
+    'Precision', 'Use Arbitrary Precision?', 'UOM Type', 'Allowed UOMs', 'Default UOM',
+    'LookUp Table Name', 'Lookup Display Columns', 'Lookup Search Columns', 'Lookup Display Format',
+    'Lookup Sort Order', 'Export Format'
+]
+
+# Set the specified columns to empty strings
+additions_attributes_onews_df[columns_to_clear] = ''
+
+
+all_additions_attributes_df = pd.concat([additions_attributes_df, additions_attributes_onews_df], ignore_index=True)
+
+
+#########
+## Questions
+#########
+# OneWS attributes: Attribute Parent Name - seems to be mix
+# OneWS attributes: Is Localizable - mix but default 'NO' for catspec
+# OneWS attributes: Is complex - mix but default 'NO' for catspec
+# OneWS attributes: Is read only - mix but default 'NO' for catspec
+# OneWS attributes: Show at entity creation -  - mix but Kathy ruled default 'NO' for catspec
+# OneWS attributes: Is searchable - mix but default 'YES' for catspec
+# OneWS attributes: Is Null Value Search Required - mix but default 'YES' for catspec
+# OneWS attributes: min and max length - these are defaut 0 with Catspec
+# OneWS attributes: Apply Time Zone Conversion - mix but default 'NO' for catspec
+
+#S8 - Attribute - Locale: deletions in S7 also trigger deletions in S8?
+
+print(additions_attributes_onews_df['Is Inheritable'])
+
+# Filter columns for the output
 columns = [
     "ID", "Action", "Unique Identifier", "Attribute Type", "Attribute Name",
     "Attribute Long Name", "Attribute Parent Name", "Data Type", "Display Type",
@@ -256,26 +310,30 @@ columns = [
     "Apply Time Zone Conversion", "Attribute Regular Expression", "Is UOM Localizable"
 ]
 
-# Filter columns
-additions_attributes_df = additions_attributes_df.loc[:, columns]
+all_additions_attributes_columns_df = all_additions_attributes_df.loc[:, columns]
 
-print(additions_attributes_df)
-exit()
+# print(additions_attributes_df)
+# exit()
+
+
+# S8 - locales
+additons_s8_df = all_additions_attributes_df.copy()
+
+# Add Attribute Path
+additons_s8_df['Attribute Path'] = additons_s8_df['Attribute Parent Name'] + '//' + additons_s8_df['Attribute Name']
 
 ###################
 ## Write output
 ###################
 
 # Combine the two DataFrames into one new DataFrame
-final_df = pd.concat([additions_attributes_df, delete_attributes_df], ignore_index=True)
-final_df.drop(columns='Attribute code', inplace=True)
+final_df = pd.concat([all_additions_attributes_columns_df, delete_attributes_df], ignore_index=True)
 
 # Display the combined DataFrame
-print(final_df)
+# print(final_df)
 
 print('### Output ###')
 
-# Assuming 'filtered_maxeda_df' has been created as shown in the previous example
 output_file_path = os.path.join(os.getcwd(), 'GS1_vs_Datamodel_Comparison_Attributes.xlsx')
 
 # Use ExcelWriter to write DataFrame to an Excel file
