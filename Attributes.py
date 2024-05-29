@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 import numpy as np
 import re
+import openpyxl
 
 load_dotenv()
 
@@ -15,10 +16,13 @@ datamodel_file_path = os.getenv('path_datamodel_maxeda')
 ## GS1 datamodel
 ###################
 print('### Read GS1 datamodel ###')
+
+print('## Establish active brick ##')
 # Read the 'Bricks' to select only the attributes from active Bricks
 gs1_df_bricks = pd.read_excel(gs1_file_path, sheet_name='Bricks', skiprows=3, dtype=str)
 gs1_active_bricks_set = set(gs1_df_bricks[gs1_df_bricks['Brick activated'] == 'Yes']['Brick Code'].dropna())
 
+print('## Establish attributes from active brick ##')
 # Read the Attributes per Brick sheet from the GS1 file to be able to address the attributes from active bricks
 gs1_df_attributes_brick = pd.read_excel(gs1_file_path, sheet_name='Data for Attributes per Brick', skiprows=3, dtype=str)
 # Filter gs1_df_attributes_brick for only those rows where the 'Brick' column's values are in gs1_active_bricks_set
@@ -27,10 +31,11 @@ gs1_df_attributes_brick_active = gs1_df_attributes_brick[gs1_df_attributes_brick
 # Create a set of the 'FieldID' values from the filtered DataFrame
 gs1_attributes_set = set(gs1_df_attributes_brick_active['FieldID'].dropna())
 
-
+print('## Read attribute metadata ##')
 # Read metadata for attributes
 gs1_df_attributes = pd.read_excel(gs1_file_path, sheet_name='Fielddefinitions', skiprows=3, dtype=str)
 
+print('## Read picklists ##')
 # Read picklists
 gs1_df_picklists = pd.read_excel(gs1_file_path, sheet_name='Picklists', skiprows=3, dtype=str)
 
@@ -90,8 +95,8 @@ maxeda_s7_df['Precision'] = maxeda_s7_df['Precision'].replace('nan', '')
 
 maxeda_attribute_s7_set = set(maxeda_s7_df['Attribute code'].replace('', np.nan).dropna())
 
-print(f'## Read S8 ##')
 
+print(f'## Read S8 ##')
 # S8 - Attribute - Locale
 maxeda_s8_df = pd.read_excel(datamodel_file_path, sheet_name='S8 - Attribute - Locale')
 
@@ -110,6 +115,99 @@ maxeda_s8_df = maxeda_s8_df[~maxeda_s8_df['Attribute code'].str.startswith("M")]
 
 maxeda_attribute_s8_set = set(maxeda_s8_df['Attribute code'].replace('', np.nan).dropna())
 
+
+# print(f'## Read S23 - Lookup Model ##')
+# maxeda_s23_df = pd.read_excel(datamodel_file_path, sheet_name='S23 - Lookup Model')
+
+# # a picklist value could have been added or deleted --> add/delete picklist value
+# # a new picklist-attribute is introduced --> add picklist
+# # a format change to picklist --> add picklist
+
+# print(f'## Read and combine lookup table exports##')
+
+# # Directory containing the .xlsx files
+# directory_path = 'Workfiles/LookupData'
+
+# # List to store the transformed dataframes
+# combined_data = []
+
+# ###############################
+# # Load the Excel file
+# file_path = 'Workfiles/LookupData/LookupData_112.xlsx'
+# sheet_name = 'OneWSTypeOfDecoration'
+
+# def read_excel_with_openpyxl(file_path, sheet_name):
+#     workbook = openpyxl.load_workbook(file_path)
+#     sheet = workbook[sheet_name]
+
+#     data = []
+#     for row in sheet.iter_rows(values_only=True):
+#         data.append([str(cell).strip() if cell is not None else "" for cell in row])
+
+#     df = pd.DataFrame(data[1:], columns=data[0])
+#     return df
+
+# df = read_excel_with_openpyxl(file_path, sheet_name)
+# print(df)
+
+# exit()
+###############################
+
+# # Iterate over each file in the directory
+# for filename in os.listdir(directory_path):
+#     if filename.endswith('.xlsx'):
+#         file_path = os.path.join(directory_path, filename)
+        
+#         # Read the Excel file
+#         xls = pd.ExcelFile(file_path)
+        
+#         # Iterate over each sheet except the first one
+#         for sheet_name in xls.sheet_names[1:]:
+#             # Read the sheet into a dataframe
+#             df = pd.read_excel(file_path, sheet_name=sheet_name)
+#             print(len(df))
+            
+#             # Check if the first column is exactly "Id" and the second column contains "Code"
+#             if df.columns[0] == 'Id' and any('Code' in col for col in df.columns[1:2]):
+
+#                 # Rename the code column to "Code"
+#                 df.rename(columns={df.columns[1]: "Code"}, inplace=True)
+                
+#                 # Check if the "Code" column has any values
+#                 if df['Code'].dropna().empty:
+#                     print(f"File '{filename}' Sheet '{sheet_name}' has an empty 'Code' column and will be excluded.")
+#                 else:
+#                     # Add a column with the sheet name
+#                     df['Sheet Name'] = sheet_name
+                    
+#                     # Rename columns that contain "en_US", "nl_BE", "nl_NL", "fr_BE", or "fr_FR"
+#                     for col in df.columns:
+#                         if "en_US" in col:
+#                             df.rename(columns={col: "en_US"}, inplace=True)
+#                         elif "nl_BE" in col:
+#                             df.rename(columns={col: "nl_BE"}, inplace=True)
+#                         elif "nl_NL" in col:
+#                             df.rename(columns={col: "nl_NL"}, inplace=True)
+#                         elif "fr_BE" in col:
+#                             df.rename(columns={col: "fr_BE"}, inplace=True)
+#                         elif "fr_FR" in col:
+#                             df.rename(columns={col: "fr_FR"}, inplace=True)
+                    
+#                     # Append the transformed dataframe to the list
+#                     combined_data.append(df)
+#             else:
+#                 # Print the filename and sheet name for sheets without the exact "Id" column or a "Code"-containing second column
+#                 print(f"File '{filename}' Sheet '{sheet_name}' doesn't have the exact 'Id' column or a 'Code'-containing second column and will be excluded.")
+        
+# # Define the desired order of columns
+# desired_columns = ['Id', 'Code', 'en_US', 'nl_BE', 'nl_NL', 'fr_BE', 'fr_FR', 'Sheet Name']
+
+# # Combine all dataframes into one, ensuring the correct column order
+# combined_df = pd.concat(combined_data, ignore_index=True).reindex(columns=desired_columns)
+
+# # Example: Print the combined dataframe
+# print(combined_df)
+# exit()
 
 
 ####################
@@ -250,9 +348,9 @@ gs1_df_attributes_processed.fillna('', inplace=True)
 ####################
 print(f'### S7 ###')
 
-####################
-## Establish set of attributes for 1) additions, 2) deletions, and 3) overlapping 
-####################
+    ####################
+    ## Establish set of attributes for 1) additions, 2) deletions, and 3) overlapping 
+    ####################
 
 attribute_add_s7_set = gs1_attributes_set - maxeda_attribute_s7_set
 attribute_delete_s7_set = maxeda_attribute_s7_set - gs1_attributes_set
@@ -264,15 +362,15 @@ attribute_overlap_s7_set = gs1_attributes_set & maxeda_attribute_s7_set
 # print(attribute_add_s7_set)
 # print(attribute_delete_s7_set)
 
-####################
-## Delete
-####################
+    ####################
+    ## Delete
+    ####################
 print(f'## Delete ##')
 
 def delete_attributes(delete_set, df, return_df):
 
-    temp_df  = df[df['Attribute code'].isin(delete_set)].copy()
-    temp_df['Action']  = 'Delete'
+    temp_df = df[df['Attribute code'].isin(delete_set)].copy()
+    temp_df['Action'] = 'Delete'
     return_df = pd.concat([return_df, temp_df], ignore_index=True)
     return return_df
 
@@ -282,9 +380,9 @@ delete_attributes_s7_df = pd.DataFrame(columns=list(maxeda_s7_df.columns))
 delete_attributes_s7_df = delete_attributes(attribute_delete_s7_set, maxeda_s7_df, delete_attributes_s7_df)
 # print(delete_attributes_s7_df)
 
-####################
-## Additions
-####################
+    ####################
+    ## Additions
+    ####################
 print(f'## Add ##')
 def add_attributes_s7(add_set, all_additions_attributes_s7_df):
 
@@ -364,12 +462,12 @@ all_additions_attributes_s7_df = add_attributes_s7(attribute_add_s7_set, all_add
 # S8 - Attribute - Locale: deletions in S7 also trigger deletions in S8?
 
 # No attribute code consitently for every attribute in S8, a lot are also missing for Category Specific attributes, crucial for additions and deletions (7K/16K)
-# See totals
 
+# LookupTables only include sheets where code column does not include "*" in the header?
 
-####################
-## Changes
-####################
+    ####################
+    ## Changes
+    ####################
 print(f'## Changes ##')
 overlap_attributes_df = gs1_df_attributes_processed[gs1_df_attributes_processed['FieldID'].isin(attribute_overlap_s7_set)].copy()
 
@@ -428,8 +526,8 @@ delete_attributes_s7_df = delete_attributes(change_set, maxeda_s7_df, delete_att
 
 # Display the unique FieldIDs and discrepancy details
 # print("Unique FieldIDs with discrepancies:", change_set)
-print("\nDiscrepancy Details:")
-print(discrepancy_df.columns)
+# print("\nDiscrepancy Details:")
+# print(discrepancy_df.columns)
 
 # print(additions_attributes_s7_df)
 # exit()
@@ -441,25 +539,25 @@ print(discrepancy_df.columns)
 
 print(f'### S8  ###')
 
-####################
-## Establish set of attributes for 1) additions, 2) deletions, and 3) overlapping 
-####################
+    ####################
+    ## Establish set of attributes for 1) additions, 2) deletions, and 3) overlapping 
+    ####################
 
 attribute_add_s8_set = gs1_attributes_set - maxeda_attribute_s8_set
 attribute_delete_s8_set = maxeda_attribute_s8_set - gs1_attributes_set
 
-####################
-## Delete
-####################
+    ####################
+    ## Delete
+    ####################
 
 # Create an empty delete_attributes_s8_df with necessary columns
 delete_attributes_s8_df = pd.DataFrame(columns=list(maxeda_s8_df.columns))
 
 delete_attributes_s8_df = delete_attributes(attribute_delete_s8_set, maxeda_s8_df,  delete_attributes_s8_df)
 
-####################
-## Additions
-####################
+    ####################
+    ## Additions
+    ####################
 print(f'## Add ##')
 
 # Initiat the dataset
@@ -493,47 +591,26 @@ additons_s8_locale_df['Attribute Long Name'] = np.where(
 #Rename headers
 additons_s8_locale_df.rename(columns={'Minimum Length': 'Min Length', 'Maximum Length': 'Max Length'}, inplace=True)
 
+
 # Empty all values in 'Min Length' and 'Max Length'
 additons_s8_locale_df['Min Length'] = ''
 additons_s8_locale_df['Max Length'] = ''
 
+# Onews
+additions_onews_s8_locale_df = additons_s8_locale_df.copy()
+# Replacing 'CatSpec' with 'OneWS' in 'Attribute Name' and removing all spaces
+additions_onews_s8_locale_df['Attribute Name'] = additions_onews_s8_locale_df['Attribute Name'].str.replace('CatSpec', 'OneWS').str.replace(' ', '').str.replace('Category Specific Attributes//', 'OneWS_XXXX//')
 
-# print(additons_s8_locale_df)
 
-# exit()
+all_additions_attributes_s8_df = pd.concat([additons_s8_locale_df, additions_onews_s8_locale_df], ignore_index=True)
 
-# # S8 - locales
-# additons_s8_df = all_additions_attributes_s7_df.copy()
+####################
+## S8 
+####################
 
-# # Add Attribute Path
-# additons_s8_df['Attribute Path'] = additons_s8_df['Attribute Parent Name'] + '//' + additons_s8_df['Attribute Name']
+print(f'### S8  ###')
+all_additions_attributes_s8_df
 
-# # Create a DataFrame with repeated rows, each original row appearing four times for different locales
-# locales = ['nl_BE', 'nl_NL', 'fr_BE', 'fr_FR']
-# additons_s8_locale_df = pd.DataFrame(
-#     np.repeat(additons_s8_df.values, len(locales), axis=0),  # Repeat each row
-#     columns=additons_s8_df.columns
-# )
-# additons_s8_locale_df['Locale'] = np.tile(locales, len(additons_s8_df))  # Assign locales repeatedly for each group of rows
-
-# # Set default values for specific columns
-# additons_s8_locale_df[['ID', 'Action', 'Attribute Path', 'Min Length', 'Max Length']] = ''
-
-# # Define 'Attribute Long Name' based on 'Locale'
-# additons_s8_locale_df['Attribute Long Name'] = np.where(
-#     additons_s8_locale_df['Locale'].isin(['nl_BE', 'nl_NL']),
-#     additons_s8_df['Attributename Dutch'].repeat(len(locales)).values,  # Repeat values to match the new row expansion
-#     additons_s8_df['Attributename French'].repeat(len(locales)).values
-# )
-# # Use straight from additons_s8_df
-# additons_s8_locale_df['Definition'] = additons_s8_df['Definition'].repeat(len(locales)).values
-# additons_s8_locale_df['Attribute Path'] = additons_s8_df['Attribute Path'].repeat(len(locales)).values
-
-# # Filtering the columns for the output as per specification
-# final_columns = ['ID', 'Action', 'Attribute Path', 'Locale', 'Attribute Long Name', 'Min Length', 'Max Length', 'Definition', 'Example', 'Business Rule']
-# additons_s8_locale_df = additons_s8_locale_df[final_columns]
-
-# print(additons_s8_locale_df)
 
 ###################
 ## Write output
@@ -564,10 +641,10 @@ final_s7_df = final_s7_df.loc[:, columns_s7]
 print('## S8 ##')
 # Filtering the columns for the output as per specification
 
-final_s8_df = pd.concat([delete_attributes_s8_df, additons_s8_locale_df], ignore_index=True)
+final_s8_df = pd.concat([delete_attributes_s8_df, all_additions_attributes_s8_df], ignore_index=True)
 
 
-columns_s8 = ['ID', 'Action', 'Attribute Path', 'Locale', 'Attribute Long Name', 'Min Length', 'Max Length', 'Definition', 'Example', 'Business Rule']
+columns_s8 = ['ID', 'Action', 'Unique Identifier', 'Attribute Path', 'Locale', 'Attribute Long Name', 'Min Length', 'Max Length', 'Definition', 'Example', 'Business Rule']
 final_s8_df = final_s8_df[columns_s8]
 
 
@@ -578,22 +655,34 @@ with pd.ExcelWriter(output_file_path, engine='openpyxl') as writer:
     final_s7_df.to_excel(writer, sheet_name='S7 - Attribute', index=False)
     final_s8_df.to_excel(writer, sheet_name='S8 - Attribute - Locale', index=False)
     # discrepancy_df.to_excel(writer, sheet_name='Changes', index=False)
-            
+
+
+####################
+## Testing
+####################            
 # Load the updated Excel file into a DataFrame to confirm it saved correctly
-loaded_attributes_df = pd.read_excel(output_file_path, sheet_name='S7 - Attribute')
+loaded_attributes_s7_df = pd.read_excel(output_file_path, sheet_name='S7 - Attribute')
+loaded_attributes_s8_df = pd.read_excel(output_file_path, sheet_name='S8 - Attribute - Locale')
 
-print("Number of additions s7:", len(attribute_add_s7_set)) # 58
-print("Number of deletions s7:", len(attribute_delete_s7_set)) # 287
-print("Number of changes s7:", len(change_set)) # 710
-print("Number of entries total calc s7:", (len(attribute_add_s7_set) * 2) + len(attribute_delete_s7_set) + len(change_set) *3) #2533 - add *2 to take into account for OneWS, delete once because of no reference to attirbute number for OneWS, change three; 2 additions, 1 delete
-print("Number of entries total s7:", len(loaded_attributes_df)) # 2609 - Some have more than one due to language
+Expected_57_additions = 58 
+Expected_57_deletions = 287
+Expected_57_changes = 710
+loaded_attributes_s7 = 2609 
+Expected_58_additions = 266 
+Expected_58_deletions = 1290 
+loaded_attributes_s8 = 11387 
 
-loaded_attributes_df = pd.read_excel(output_file_path, sheet_name='S8 - Attribute - Locale')
-print("Number of deletions s8:", len(attribute_delete_s8_set)) # 266 - some in s7 not in s8 and vice versa 
-print("Number of additions s8:", len(attribute_add_s8_set)) # 1290 - You would expect S7 deletions * 4 but it seems that a significant number doesn't have GS1 attribute number in the definition
-print("Number of deletions tocal calc s8:", (len(attribute_delete_s8_set) * 4) ) # 1064 deletions +/- 4 as not all descriptions of the same attribute contain attribute id
-print("Number of entries total s8:", len(loaded_attributes_df)) # 1067
+assert len(attribute_add_s7_set) == Expected_57_additions, f"Expected {Expected_57_additions} additions, got {len(attribute_add_s7_set)}"
+assert len(attribute_delete_s7_set) == Expected_57_deletions, f"Expected {Expected_57_deletions} deletions, got {len(attribute_delete_s7_set)}"
+assert len(change_set) == Expected_57_changes, f"Expected {Expected_57_changes} changes, got {len(change_set)}"
+expected_total_s7 = (len(attribute_add_s7_set) * 2) + len(attribute_delete_s7_set) + len(change_set) * 3
+assert expected_total_s7 == 2533, f"Expected 2533 total entries, got {expected_total_s7}"
+assert len(loaded_attributes_s7_df) == loaded_attributes_s7, f"Expected {loaded_attributes_s7} total entries in S7, got {len(loaded_attributes_s7_df)}"
 
-print(attribute_add_s8_set)
+assert len(attribute_delete_s8_set) == Expected_58_additions, f"Expected {Expected_58_additions} deletions in S8, got {len(attribute_delete_s8_set)}"
+assert len(attribute_add_s8_set) == Expected_58_deletions, f"Expected {Expected_58_deletions} additions in S8, got {len(attribute_add_s8_set)}"
+expected_total_s8 = (len(attribute_delete_s8_set) * 4) + (len(attribute_add_s8_set) * 4 * 2)
+assert expected_total_s8 == 11384, f"Expected 11384 total entries in S8, got {expected_total_s8}"
+assert len(loaded_attributes_s8_df) == loaded_attributes_s8, f"Expected {loaded_attributes_s8} total entries in S8, got {len(loaded_attributes_s8_df)}"
 
-
+print("All tests passed successfully.")
