@@ -123,13 +123,13 @@ maxeda_attribute_s8_set = set(maxeda_s8_df['Attribute code'].replace('', np.nan)
 # # a new picklist-attribute is introduced --> add picklist
 # # a format change to picklist --> add picklist
 
-# print(f'## Read and combine lookup table exports##')
 
-# # Directory containing the .xlsx files
-# directory_path = 'Workfiles/LookupData'
+# Directory containing the .xlsx files
+directory_path = 'Workfiles/LookupData'
 
-# # List to store the transformed dataframes
-# combined_data = []
+# List to store the transformed dataframes
+combined_data = []
+
 
 # ###############################
 # # Load the Excel file
@@ -153,61 +153,206 @@ maxeda_attribute_s8_set = set(maxeda_s8_df['Attribute code'].replace('', np.nan)
 # exit()
 ###############################
 
-# # Iterate over each file in the directory
-# for filename in os.listdir(directory_path):
-#     if filename.endswith('.xlsx'):
-#         file_path = os.path.join(directory_path, filename)
-        
-#         # Read the Excel file
-#         xls = pd.ExcelFile(file_path)
-        
-#         # Iterate over each sheet except the first one
-#         for sheet_name in xls.sheet_names[1:]:
-#             # Read the sheet into a dataframe
-#             df = pd.read_excel(file_path, sheet_name=sheet_name)
-#             print(len(df))
+maxeda_lookuptables_s7_set = set(maxeda_s7_df['LookUp Table Name'].replace('', np.nan).dropna())
+
+# Assuming gs1_df_picklists is already loaded correctly
+valid_picklist_entries = set(zip(gs1_df_picklists['Picklist ID'], gs1_df_picklists['Code value']))
+
+# def drop_duplicate_columns(df, file_name, sheet_name):
+#     # Identify all duplicate columns (determine duplicates across all occurrences)
+#     duplicates = df.columns[df.columns.duplicated()]
+    
+#     if not duplicates.empty:
+#         print(f'Dropping duplicate columns in {file_name} - {sheet_name}: {duplicates.tolist()}')
+#         # Drop duplicates, keep only the first occurrence
+#         df = df.loc[:, ~df.columns.duplicated()]
+    
+#     return df
+
+
+
+def read_excel_with_openpyxl(file_path, sheet_name):
+    workbook = openpyxl.load_workbook(file_path, data_only=True)
+    sheet = workbook[sheet_name]
+    data = []
+
+    for row in sheet.iter_rows(values_only=True):
+        data.append([str(cell).strip() if cell is not None else "" for cell in row])
+
+    # Check if the required headers are present and if the second column has at least one non-empty value
+    if data and len(data[0]) >= 2 and data[0][0] == "Id" and "Code" in data[0][1]:
+        df = pd.DataFrame(data[1:], columns=data[0])
+        # Check if the second column contains at least one non-empty value
+        if not df.iloc[:, 1].dropna().empty:
+
+            # Rename the second column to "Code" explicitly
+            # df.columns = [df.columns[0]] + ['Code'] + list(df.columns[2:])
+
+            # # Prepare rename map for specific substrings in columns
+            # rename_map = {}
+            # for col in df.columns:
+            #     if "en_US" in col:
+            #         rename_map[col] = "en_EN"
+            #     if "nl_NL" in col:
+            #         rename_map[col] = "nl_NL"
+            #     if "nl_BE" in col:
+            #         rename_map[col] = "nl_BE"
+            #     if "fr_FR" in col:
+            #         rename_map[col] = "fr_FR"
+            #     if "fr_BE" in col:
+            #         rename_map[col] = "fr_BE"
+
+            # df.rename(columns=rename_map, inplace=True)
             
-#             # Check if the first column is exactly "Id" and the second column contains "Code"
-#             if df.columns[0] == 'Id' and any('Code' in col for col in df.columns[1:2]):
+            df['Sheet'] = sheet_name
+            # df['FileName'] = os.path.basename(file_path)  # Store the file nam
 
-#                 # Rename the code column to "Code"
-#                 df.rename(columns={df.columns[1]: "Code"}, inplace=True)
-                
-#                 # Check if the "Code" column has any values
-#                 if df['Code'].dropna().empty:
-#                     print(f"File '{filename}' Sheet '{sheet_name}' has an empty 'Code' column and will be excluded.")
-#                 else:
-#                     # Add a column with the sheet name
-#                     df['Sheet Name'] = sheet_name
-                    
-#                     # Rename columns that contain "en_US", "nl_BE", "nl_NL", "fr_BE", or "fr_FR"
-#                     for col in df.columns:
-#                         if "en_US" in col:
-#                             df.rename(columns={col: "en_US"}, inplace=True)
-#                         elif "nl_BE" in col:
-#                             df.rename(columns={col: "nl_BE"}, inplace=True)
-#                         elif "nl_NL" in col:
-#                             df.rename(columns={col: "nl_NL"}, inplace=True)
-#                         elif "fr_BE" in col:
-#                             df.rename(columns={col: "fr_BE"}, inplace=True)
-#                         elif "fr_FR" in col:
-#                             df.rename(columns={col: "fr_FR"}, inplace=True)
-                    
-#                     # Append the transformed dataframe to the list
-#                     combined_data.append(df)
-#             else:
-#                 # Print the filename and sheet name for sheets without the exact "Id" column or a "Code"-containing second column
-#                 print(f"File '{filename}' Sheet '{sheet_name}' doesn't have the exact 'Id' column or a 'Code'-containing second column and will be excluded.")
+            return df
+    return None  # Return None if conditions are not met
+
+def read_all_excel_files(directory_path):
+    all_data_frames = []
+    counter = 0
+    for filename in os.listdir(directory_path):
+        if filename.endswith('.xlsx'):
+            counter += 1
+            if counter< 1000:
+                print(f"counter LookupData files: {counter}")
+                file_path = os.path.join(directory_path, filename)
+                workbook = openpyxl.load_workbook(file_path, data_only=True)
+
+                # Iterate over each sheet except the first one
+                for sheet_name in workbook.sheetnames[1:]:
+                    if sheet_name in maxeda_lookuptables_s7_set:
+                        # print(filename)
+                        # print(sheet_name)
+                        df = read_excel_with_openpyxl(file_path, sheet_name)
+                        if df is not None:
+                            # First, check the formatting of key columns just to be sure
+                            df['Sheet'] = df['Sheet'].str.strip()
+                            maxeda_s7_df['LookUp Table Name'] = maxeda_s7_df['LookUp Table Name'].str.strip()
+                            # Perform the merge
+                            df = df.merge(maxeda_s7_df[['LookUp Table Name', 'Attribute code']], left_on='Sheet', right_on='LookUp Table Name', how='left')
+
+                            # Ensuring formatting is correct for the key columns
+                            df['Attribute code'] = df['Attribute code'].str.strip()
+                            gs1_df_attributes['FieldID'] = gs1_df_attributes['FieldID'].str.strip()
+                            # Performing the merge to add 'Picklist ID'
+                            df = df.merge(gs1_df_attributes[['FieldID', 'Picklist ID']], left_on='Attribute code', right_on='FieldID', how='left')
+
+                            # Create a set of valid combinations from gs1_df_picklists
+                            valid_combinations = set(zip(gs1_df_picklists['Picklist ID'], gs1_df_picklists['Code value']))
+
+                            # Create a list to store the details of disregarded entries
+                            disregarded_entries = []
+
+                            # Define a function to filter rows and collect details of disregarded entries
+                            def filter_valid_combinations(row, valid_combinations):
+                                # Check if the combination of 'Picklist ID' and the value in the second column is in the valid combinations
+                                if (row['Picklist ID'], row.iloc[1]) not in valid_combinations:
+                                    # Collect filename, sheet name, and the second column's value for disregarded entries
+                                    disregarded_entries.append({
+                                        'filename': filename,  # Assumes 'filename' is defined where this function is called
+                                        'sheet_name': sheet_name,  # Assumes 'sheet_name' is defined where this function is called
+                                        'second_column_value': row.iloc[1]
+                                    })
+                                    return False
+                                return True
+
+
+                            # Apply the filtering function
+                            filtered_df = df[df.apply(filter_valid_combinations, axis=1, args=(valid_combinations,))]
+
+                            # columns_to_drop = ['Sheet', 'LookUp Table Name', 'Attribute code', 'FieldID', 'Picklist ID']
+                            # filtered_df.drop(columns=columns_to_drop, errors='ignore')
+                            
+                            # Append only if there are disregarded entries
+                            if disregarded_entries:
+                                all_data_frames.append({'df': filtered_df, 'filename': filename, 'sheet_name': sheet_name})
+
+                            # # Print details of the disregarded entries
+                            # for entry in disregarded_entries:
+                            #     print(f"Filename: {entry['filename']}, Sheet: {entry['sheet_name']}, Second Column Value: {entry['second_column_value']}")
+
+
+    return all_data_frames          
         
-# # Define the desired order of columns
-# desired_columns = ['Id', 'Code', 'en_US', 'nl_BE', 'nl_NL', 'fr_BE', 'fr_FR', 'Sheet Name']
 
-# # Combine all dataframes into one, ensuring the correct column order
-# combined_df = pd.concat(combined_data, ignore_index=True).reindex(columns=desired_columns)
+directory_path = 'Workfiles/LookupData'
+final_df = read_all_excel_files(directory_path)
 
-# # Example: Print the combined dataframe
-# print(combined_df)
-# exit()
+        #             print(df)
+        # if filename == 'LookupData_112.xlsx':
+        #     exit()
+        # if counter == 10:
+        #     exit()
+
+#     # Concatenate all data frames into one, if any valid sheets were processed
+#     if all_data_frames:
+#         final_df = pd.concat(all_data_frames, ignore_index=True)
+#         return final_df
+#     else:
+#         return pd.DataFrame()  # Return an empty DataFrame if no sheets were added
+
+# # Specify the directory path
+
+
+# # exit()
+# # # First, check the formatting of key columns just to be sure
+# # final_df['Sheet'] = final_df['Sheet'].str.strip()
+# # maxeda_s7_df['LookUp Table Name'] = maxeda_s7_df['LookUp Table Name'].str.strip()
+# # # Perform the merge
+# # final_df = final_df.merge(maxeda_s7_df[['LookUp Table Name', 'Attribute code']], left_on='Sheet', right_on='LookUp Table Name', how='left')
+
+# # # Ensuring formatting is correct for the key columns
+# # final_df['Attribute code'] = final_df['Attribute code'].str.strip()
+# # gs1_df_attributes['FieldID'] = gs1_df_attributes['FieldID'].str.strip()
+# # # Performing the merge to add 'Picklist ID'
+# # final_df = final_df.merge(gs1_df_attributes[['FieldID', 'Picklist ID']], left_on='Attribute code', right_on='FieldID', how='left')
+
+
+# # Directly converting to set, ensuring all values are unique
+# # picklists_maxeda_set = set(final_df['Picklist ID'].dropna())
+
+# print(final_df)
+
+# # print("Sample 'Picklist ID' values from final_df:")
+# # print(final_df['Picklist ID'].head())
+
+# # print("Sample 'Picklist ID' values from gs1_df_picklists:")
+# # print(gs1_df_picklists['Picklist ID'].head())
+
+
+# # # exit()
+
+# # Extract relevant columns and filter NaNs if necessary
+# filtered_final_df = final_df[['Picklist ID', 'Code']].dropna(subset=['Picklist ID', 'Code'])
+
+# # Create sets of code values for each DataFrame based on 'Picklist ID'
+# codes_only_in_final_df = set(zip(filtered_final_df['Picklist ID'], filtered_final_df['Code'], filtered_final_df['FileName'], filtered_final_df['Sheet']))
+# # codes_in_final_df = set(zip(filtered_final_df['Picklist ID'], filtered_final_df['Code']))
+
+# # Extract just the 'Picklist IDs' from codes_in_final_df
+# picklist_ids_in_final_df = {pid for pid, _ in codes_only_in_final_df}
+
+# # Filter gs1_df_picklists to include only relevant 'Picklist IDs'
+# filtered_gs1_picklists = gs1_df_picklists[gs1_df_picklists['Picklist ID'].isin(picklist_ids_in_final_df)]
+
+# # Create the set of (Picklist ID, Code value) tuples with the filtered DataFrame
+# codes_only_in_gs1_picklists = set(zip(filtered_gs1_picklists['Picklist ID'], filtered_gs1_picklists['Code value'], ['']*len(filtered_gs1_picklists), ['']*len(filtered_gs1_picklists)))
+# # codes_in_gs1_picklists = set(zip(filtered_gs1_picklists['Picklist ID'], filtered_gs1_picklists['Code value']))
+
+# # Find codes in final_df not in gs1_df_picklists
+# codes_only_in_final_df = codes_only_in_final_df - codes_only_in_gs1_picklists
+
+# # Find codes in gs1_df_picklists not in final_df
+# codes_only_in_gs1_picklists = codes_only_in_gs1_picklists - codes_only_in_final_df
+
+# # Print discrepancies
+# print("Codes in final_df but not in gs1_df_picklists:", codes_only_in_final_df)
+# print("Codes in gs1_df_picklists but not in final_df:", codes_only_in_gs1_picklists)
+
+# # exit()
 
 
 ####################
@@ -648,21 +793,46 @@ columns_s8 = ['ID', 'Action', 'Unique Identifier', 'Attribute Path', 'Locale', '
 final_s8_df = final_s8_df[columns_s8]
 
 
-output_file_path = os.path.join(os.getcwd(), 'GS1_vs_Datamodel_Comparison_Attributes.xlsx')
+output_file_path_attributes = os.path.join(os.getcwd(), 'GS1_vs_Datamodel_Comparison_Attributes.xlsx')
+output_file_path_lookupdata = os.path.join(os.getcwd(), 'LookupData.xlsx')
 
+print('## Output writer ##')
 # Use ExcelWriter to write DataFrame to an Excel file
-with pd.ExcelWriter(output_file_path, engine='openpyxl') as writer:
+with pd.ExcelWriter(output_file_path_attributes, engine='openpyxl') as writer:
     final_s7_df.to_excel(writer, sheet_name='S7 - Attribute', index=False)
     final_s8_df.to_excel(writer, sheet_name='S8 - Attribute - Locale', index=False)
-    # discrepancy_df.to_excel(writer, sheet_name='Changes', index=False)
+    
+# Use ExcelWriter to write DataFrame to an Excel file
+with pd.ExcelWriter(output_file_path_lookupdata, engine='openpyxl') as writer:
+    # Create a DataFrame to store summary information about the sheets
+    summary_data = {
+        'LookupTableName': [item['sheet_name'] for item in final_df],
+        'SheetName': [item['sheet_name'] for item in final_df],
+        'Load Lookup?': ['Yes'] * len(final_df)
+    }
+    summary_df = pd.DataFrame(summary_data)
+
+    # Write the summary DataFrame as the first sheet named 'Metadata'
+    summary_df.to_excel(writer, sheet_name='Metadata', index=False)
+
+    # Write each DataFrame to its respective sheet
+    for item in final_df:
+        # Write DataFrame to a sheet named after the original sheet_name
+        item['df'].to_excel(writer, sheet_name=item['sheet_name'], index=False)
+
+print("Excel file has been created with 'Metadata' as the first sheet.")
+
+
+
 
 
 ####################
 ## Testing
 ####################            
 # Load the updated Excel file into a DataFrame to confirm it saved correctly
-loaded_attributes_s7_df = pd.read_excel(output_file_path, sheet_name='S7 - Attribute')
-loaded_attributes_s8_df = pd.read_excel(output_file_path, sheet_name='S8 - Attribute - Locale')
+loaded_attributes_s7_df = pd.read_excel(output_file_path_attributes, sheet_name='S7 - Attribute')
+loaded_attributes_s8_df = pd.read_excel(output_file_path_attributes, sheet_name='S8 - Attribute - Locale')
+loaded_lookupdata_df_metadata = pd.read_excel(output_file_path_lookupdata, sheet_name='Metadata')
 
 Expected_57_additions = 58 
 Expected_57_deletions = 287
@@ -671,6 +841,8 @@ loaded_attributes_s7 = 2609
 Expected_58_additions = 266 
 Expected_58_deletions = 1290 
 loaded_attributes_s8 = 11387 
+expected_items_metadata_lookupdata = 200
+loaded_sheets_lookupdata = 201
 
 assert len(attribute_add_s7_set) == Expected_57_additions, f"Expected {Expected_57_additions} additions, got {len(attribute_add_s7_set)}"
 assert len(attribute_delete_s7_set) == Expected_57_deletions, f"Expected {Expected_57_deletions} deletions, got {len(attribute_delete_s7_set)}"
@@ -684,5 +856,11 @@ assert len(attribute_add_s8_set) == Expected_58_deletions, f"Expected {Expected_
 expected_total_s8 = (len(attribute_delete_s8_set) * 4) + (len(attribute_add_s8_set) * 4 * 2)
 assert expected_total_s8 == 11384, f"Expected 11384 total entries in S8, got {expected_total_s8}"
 assert len(loaded_attributes_s8_df) == loaded_attributes_s8, f"Expected {loaded_attributes_s8} total entries in S8, got {len(loaded_attributes_s8_df)}"
+
+assert len(loaded_lookupdata_df_metadata) == expected_items_metadata_lookupdata, f"Metadata sheet should contain exactly 200 items, found {len(loaded_lookupdata_df_metadata)} items."
+expected_sheets_count = loaded_sheets_lookupdata  # 200 data sheets + 1 metadata sheet
+actual_sheets_count = len(pd.ExcelFile(output_file_path_lookupdata).sheet_names)
+assert actual_sheets_count == expected_sheets_count, f"Excel file should contain {expected_sheets_count} sheets, found {actual_sheets_count} sheets."
+
 
 print("All tests passed successfully.")
