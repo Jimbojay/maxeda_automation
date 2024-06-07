@@ -65,6 +65,7 @@ print('## Read picklists ##')
 # Read picklists
 gs1_df_picklists = pd.read_excel(gs1_file_path, sheet_name='Picklists', skiprows=3, dtype=str)
 
+
 ###################
 ## Maxeda datamodel
 ###################
@@ -345,6 +346,20 @@ gs1_df_attributes_processed['INPUT_Attribute_name'] = gs1_df_attributes_processe
                                                 lambda x: x[:x.rfind('(')].strip() if '(' in x and x.endswith(')') else x.strip()
                                             ).apply(lambda x: f"CatSpec_{x}")
 
+
+def clean_sheet_name(sheet_name):
+    # Define invalid characters for Excel sheet names
+    invalid_chars = ['\\', '/', '*', '[', ']', ':', '?', ' ']
+    # Remove invalid characters
+    for char in invalid_chars:
+        sheet_name = sheet_name.replace(char, '')
+    # Truncate to 30 characters
+    return sheet_name
+
+# Apply the function to the INPUT_Attribute_name column
+gs1_df_attributes_processed['INPUT_Attribute_name'] = gs1_df_attributes_processed['INPUT_Attribute_name'].apply(clean_sheet_name)
+
+
 # INPUT_Lookup_table_name
 gs1_df_attributes_processed['INPUT_Lookup_table_name'] = np.select(
     [
@@ -353,7 +368,7 @@ gs1_df_attributes_processed['INPUT_Lookup_table_name'] = np.select(
     ],
     [
         "YesNo",
-        gs1_df_attributes_processed['INPUT_Attribute_name'].str.replace(r'\s+', '', regex=True).str.strip()
+        gs1_df_attributes_processed['INPUT_Attribute_name'].str.replace(r'\s+', '', regex=True).str.strip().apply(lambda x: x[8:][:30]) # max is 30 but need space for OneWs later on
     ],
     default=""
 )
@@ -408,11 +423,11 @@ gs1_df_attributes_processed['Allowed UOMs'] = np.where(gs1_df_attributes_process
 gs1_df_attributes_processed['Default UOM'] = np.where(gs1_df_attributes_processed['Format'] == 'NumberPicklist', gs1_df_attributes_processed['UoM fixed'],'')
 gs1_df_attributes_processed['Allowable Values'] = ''
 gs1_df_attributes_processed['LookUp Table Name'] = gs1_df_attributes_processed['INPUT_Lookup_table_name']
-gs1_df_attributes_processed['Lookup Display Columns'] =  '[' + gs1_df_attributes_processed['LookUp Table Name'] + ']'
-gs1_df_attributes_processed['Lookup Search Columns'] =  '[' + gs1_df_attributes_processed['LookUp Table Name'] + ']'
-gs1_df_attributes_processed['Lookup Display Format'] = '[' + gs1_df_attributes_processed['LookUp Table Name'] + ']'
-gs1_df_attributes_processed['Lookup Sort Order'] = '[' + gs1_df_attributes_processed['LookUp Table Name'] + ']'
-gs1_df_attributes_processed['Export Format'] = '[' + gs1_df_attributes_processed['LookUp Table Name'] + ']'
+gs1_df_attributes_processed['Lookup Display Columns'] = gs1_df_attributes_processed['LookUp Table Name'].apply(lambda x: f"[{x}]" if x.strip() else x)
+gs1_df_attributes_processed['Lookup Search Columns'] = gs1_df_attributes_processed['LookUp Table Name'].apply(lambda x: f"[{x}]" if x.strip() else x)
+gs1_df_attributes_processed['Lookup Display Format'] = gs1_df_attributes_processed['LookUp Table Name'].apply(lambda x: f"[{x}]" if x.strip() else x)
+gs1_df_attributes_processed['Lookup Sort Order'] = gs1_df_attributes_processed['LookUp Table Name'].apply(lambda x: f"[{x}]" if x.strip() else x)
+gs1_df_attributes_processed['Lookup Order'] = gs1_df_attributes_processed['LookUp Table Name'].apply(lambda x: f"[{x}]" if x.strip() else x)
 gs1_df_attributes_processed['Sort Order'] = 0
 gs1_df_attributes_processed['Definition'] = ("GS1 Field_ID " + 
                                          gs1_df_attributes_processed['FieldID'].astype(str) + " " + 
@@ -510,7 +525,7 @@ def add_attributes_s7(add_set, all_additions_attributes_s7_df):
         additions_attributes_onews_s7_df['Is Inheritable']  # Keep the original value if conditions are False
     )
 
-    additions_attributes_onews_s7_df['LookUp Table Name'] = 'OneWS' + additions_attributes_onews_s7_df['LookUp Table Name']
+    additions_attributes_onews_s7_df['LookUp Table Name'] = additions_attributes_onews_s7_df['Attribute Name'].str.replace('_', '').str.slice(0, 30)
     additions_attributes_onews_s7_df['LookUp Display Columns'] = '[Code],[Description]'
     additions_attributes_onews_s7_df['LookUp Search Columns'] = '[Code],[Description]'
     additions_attributes_onews_s7_df['LookUp Display Format'] = '[Code]'
@@ -540,7 +555,30 @@ all_additions_attributes_s7_df = pd.DataFrame(columns=list(gs1_df_attributes_pro
 all_additions_attributes_s7_df = add_attributes_s7(attribute_add_s7_set, all_additions_attributes_s7_df)
 
 # s7_add_picklist_ID_set = set(all_additions_attributes_s7_df['Picklist ID'].dropna())
-s7_add_picklist_ID_set = set(zip(all_additions_attributes_s7_df[all_additions_attributes_s7_df['Picklist ID'].notna() & (all_additions_attributes_s7_df['Picklist ID'] != '')]['Picklist ID'], all_additions_attributes_s7_df[all_additions_attributes_s7_df['Picklist ID'].notna() & (all_additions_attributes_s7_df['Picklist ID'] != '')]['LookUp Table Name']))
+# s7_add_picklist_ID_set = set(zip(all_additions_attributes_s7_df[all_additions_attributes_s7_df['Picklist ID'].notna() & (all_additions_attributes_s7_df['Picklist ID'] != '')]['Picklist ID'], all_additions_attributes_s7_df[all_additions_attributes_s7_df['Picklist ID'].notna() & (all_additions_attributes_s7_df['Picklist ID'] != '')]['LookUp Table Name']))
+# s7_add_picklist_ID_set = set(zip(
+#     all_additions_attributes_s7_df[(all_additions_attributes_s7_df['Picklist ID'].notna()) & (all_additions_attributes_s7_df['Picklist ID'] != '') & (all_additions_attributes_s7_df['LookUp Table Name'].notna()) & (all_additions_attributes_s7_df['LookUp Table Name'] != '')]['Picklist ID'],
+#     all_additions_attributes_s7_df[(all_additions_attributes_s7_df['Picklist ID'].notna()) & (all_additions_attributes_s7_df['Picklist ID'] != '') & (all_additions_attributes_s7_df['LookUp Table Name'].notna()) & (all_additions_attributes_s7_df['LookUp Table Name'] != '')]['LookUp Table Name']
+# ))
+
+
+s7_add_picklist_ID_set = set(zip(
+    all_additions_attributes_s7_df[
+        (all_additions_attributes_s7_df['Picklist ID'].notna()) & 
+        (all_additions_attributes_s7_df['Picklist ID'] != '') & 
+        (all_additions_attributes_s7_df['LookUp Table Name'].notna()) & 
+        (all_additions_attributes_s7_df['LookUp Table Name'] != '') & 
+        (all_additions_attributes_s7_df['Display Type'] == 'LookupTable')
+    ]['Picklist ID'],
+    all_additions_attributes_s7_df[
+        (all_additions_attributes_s7_df['Picklist ID'].notna()) & 
+        (all_additions_attributes_s7_df['Picklist ID'] != '') & 
+        (all_additions_attributes_s7_df['LookUp Table Name'].notna()) & 
+        (all_additions_attributes_s7_df['LookUp Table Name'] != '') & 
+        (all_additions_attributes_s7_df['Display Type'] == 'LookupTable')
+    ]['LookUp Table Name']
+))
+print(f"s7_add_picklist_ID_set: {s7_add_picklist_ID_set}")
 
 #########
 ## Questions
@@ -595,7 +633,7 @@ merged_df = overlap_attributes_df.merge(
     how='left'
 )
 
-print(f"merged_df: {merged_df}")
+# print(f"merged_df: {merged_df}")
 # exit()
 
 # Step 3: Compare original and newly added values, collect discrepancies and reasons
@@ -620,7 +658,7 @@ for col in columns_to_compare:
 # Convert discrepancy details to a DataFrame for better visualization and analysis
 discrepancy_df = pd.DataFrame(discrepancy_details)
 
-print(f"discrepency df: {len(discrepancy_df)}")
+# print(f"discrepency df: {len(discrepancy_df)}")
 # exit()
 
 
@@ -633,8 +671,26 @@ changes_s7_df = merged_df[merged_df['FieldID'].isin(change_set)].copy()
 # Make set for picklist-value additions
 # s7_change_picklist_ID_set = set(changes_s7_df['Picklist ID'].dropna())
 # set((x, y) for x, y in zip(changes_s7_df['Picklist ID'], changes_s7_df['LookUp Table Name']) if x)
-s7_change_picklist_ID_set = set(zip(changes_s7_df[changes_s7_df['Picklist ID'].notna() & (changes_s7_df['Picklist ID'] != '')]['Picklist ID'], changes_s7_df[changes_s7_df['Picklist ID'].notna() & (changes_s7_df['Picklist ID'] != '')]['LookUp Table Name']))
+s7_change_picklist_ID_set = set(zip(
+    changes_s7_df[
+        (changes_s7_df['Picklist ID'].notna()) & 
+        (changes_s7_df['Picklist ID'] != '') & 
+        (changes_s7_df['LookUp Table Name'].notna()) & 
+        (changes_s7_df['LookUp Table Name'] != '') & 
+        (changes_s7_df['ORIGINAL_Display Type'] != 'LookupTable') & 
+        (changes_s7_df['Display Type'] == 'LookupTable')
+    ]['Picklist ID'],
+    changes_s7_df[
+        (changes_s7_df['Picklist ID'].notna()) & 
+        (changes_s7_df['Picklist ID'] != '') & 
+        (changes_s7_df['LookUp Table Name'].notna()) & 
+        (changes_s7_df['LookUp Table Name'] != '') & 
+        (changes_s7_df['ORIGINAL_Display Type'] != 'LookupTable') & 
+        (changes_s7_df['Display Type'] == 'LookupTable')
+    ]['LookUp Table Name']
+))
 
+print(f"s7_change_picklist_ID_set: {s7_change_picklist_ID_set}")
 
 # all_additions_attributes_s7_df = add_attributes_s7(change_set, all_additions_attributes_s7_df)
 # delete_attributes_s7_df = delete_attributes(change_set, maxeda_s7_df_scope, delete_attributes_s7_df)
@@ -747,7 +803,7 @@ additions_onews_s8_locale_df['Attribute Name'] = additions_onews_s8_locale_df['A
 
 all_additions_attributes_s8_df = pd.concat([additons_s8_locale_df, additions_onews_s8_locale_df], ignore_index=True)
 
-print(f'len df_all: {len(all_additions_attributes_s8_df)}')
+# print(f'len df_all: {len(all_additions_attributes_s8_df)}')
 
 # Find the IDs that are in attribute_delete_s7_IDs_set but not in maxeda_s8_IDs_set
 missing_ids = attribute_delete_s7_IDs_set - maxeda_s8_IDs_set
@@ -783,6 +839,8 @@ for picklist_id, lookup_table_name in s7_add_picklist_ID_total_set:
 
     # Filter gs1_df_picklists for rows with the current Picklist ID
     new_picklist_values_df = gs1_df_picklists[gs1_df_picklists['Picklist ID'] == picklist_id].copy()
+
+    # print(f"new_picklist_values_df: {new_picklist_values_df}")
     # Add the LookUp Table Name to the matching rows
     # matching_rows['LookUp Table Name'] = lookup_table_name
     # Append the modified rows to the list
@@ -802,9 +860,9 @@ for picklist_id, lookup_table_name in s7_add_picklist_ID_total_set:
         f'{lookup_table_name}//fr_FR': new_picklist_values_df['Values in French used for user interface ']
     })
 
-    print(lookup_table_name)
-    print(reconfigured_df)
-    exit()
+    print(f"lookup table name: {lookup_table_name}")
+    # print(f"reconfigured_df: {reconfigured_df}")
+    # exit()
 
 
 
