@@ -252,6 +252,7 @@ def read_all_excel_files(directory_path):
         
 directory_path = 'Workfiles/LookupData'
 final_lookupdata_df = read_all_excel_files(directory_path)
+delete_lookupdata_df = final_lookupdata_df.copy()
 
 ####################
 ## Pre-calculations for possible additions
@@ -516,31 +517,11 @@ s7_add_picklist_ID_set = set(zip(
         (all_additions_attributes_s7_df['Display Type'] == 'LookupTable')
     ]['LookUp Table Name']
 ))
-print(f"s7_add_picklist_ID_set: {s7_add_picklist_ID_set}")
+# print(f"s7_add_picklist_ID_set: {s7_add_picklist_ID_set}")
 
 #########
 ## Questions
 #########
-# OneWS attributes: Attribute Parent Name - seems to be mix
-# OneWS attributes: Is Localizable - mix but default 'NO' for catspec
-# OneWS attributes: Is complex - mix but default 'NO' for catspec
-# OneWS attributes: Is read only - mix but default 'NO' for catspec
-# OneWS attributes: Is searchable - mix but default 'YES' for catspec
-# OneWS attributes: Is Null Value Search Required - mix but default 'YES' for catspec
-# OneWS attributes: min and max length sometimes filled
-# OneWS attributes: UOM type = mix, but should equal "GDSN UOM"?
-# OneWS attributes: sort order often empty
-# Apply Time Zone converstion sometimes YES
-
-
-# Changes: Allowed and Default UOM vaak andere notaties van hetzelfde. Deze meenemen? Net zoals precision of TextArea → texbox
-
-# S8 - Attribute - Locale: deletions in S7 also trigger deletions in S8?
-# S8 - Worden attribuutcodes autmatisch meegenomen of dienen ze ingegeven te worden na eerst S7 geupload te hebben? 
-
-# No attribute code consitently for every attribute in S8, a lot are also missing for Category Specific attributes, crucial for additions and deletions (7K/16K)
-
-# LookupTables only include sheets where code column does not include "*" in the header?
 
     ####################
     ## Changes
@@ -631,7 +612,31 @@ s7_change_from_LookupTableName_set = set(
     ]['ORIGINAL_LookUp Table Name']
 )
 
-print(f"s7_change_to_picklist_set: {s7_change_to_picklist_ID_set}")
+# print(f"s7_change_to_picklist_set: {s7_change_to_picklist_ID_set}")
+
+# Combine the two DataFrames into one new DataFrame
+final_s7_df = pd.concat([delete_attributes_s7_df, all_additions_attributes_s7_df, changes_s7_df], ignore_index=True)
+final_s7_additions_changes_df = pd.concat([all_additions_attributes_s7_df, changes_s7_df], ignore_index=True)
+
+# Filter columns for the output
+columns_s7 = [
+    "ID", "Action", "Unique Identifier", "Attribute Type", "Attribute Name",
+    "Attribute Long Name", "Attribute Parent Name", "Data Type", "Display Type",
+    "Is Collection", "Is Inheritable", "Is Localizable", "Is Complex", "Is Lookup",
+    "Is Required", "Is ReadOnly", "Is Hidden", "Show At Entity Creation?", "Is Searchable",
+    "Is Null Value Search Required", "Generate Report Table Column?", "Default Value",
+    "Minimum Length", "Maximum Length", "Range From", "Is Range From Inclusive",
+    "Range To", "Is Range To Inclusive", "Precision", "Use Arbitrary Precision?",
+    "UOM Type", "Allowed UOMs", "Default UOM", "Allowable Values", "LookUp Table Name",
+    "Lookup Display Columns", "Lookup Search Columns", "Lookup Display Format",
+    "Lookup Sort Order", "Export Format", "Sort Order", "Definition", "Example",
+    "Business Rule", "Label", "Extension", "Web URI", "Enable History",
+    "Apply Time Zone Conversion", "Attribute Regular Expression", "Is UOM Localizable"
+]
+
+final_s7_df = final_s7_df[columns_s7]
+delete_attributes_s7_df = delete_attributes_s7_df[columns_s7]
+final_s7_additions_changes_df = final_s7_additions_changes_df[columns_s7]
 
 ####################
 ## S8 
@@ -695,11 +700,20 @@ all_additions_attributes_s8_df = pd.concat([additons_s8_locale_df, additions_one
 # Find the IDs that are in attribute_delete_s7_MaxedaIDs_set but not in maxeda_s8_IDs_set
 missing_ids = attribute_delete_s7_MaxedaIDs_set - maxeda_s8_IDs_set
 
-# Print the missing IDs
-print("IDs in attribute_delete_s7_MaxedaIDs_set that are not in maxeda_s8_df:")
-for id in missing_ids:
-    print(id) 
+# # Print the missing IDs
+# print("IDs in attribute_delete_s7_MaxedaIDs_set that are not in maxeda_s8_df:")
+# for id in missing_ids:
+#     print(id) 
 
+
+# Combine all data frames
+final_s8_df = pd.concat([delete_attributes_s8_df, all_additions_attributes_s8_df], ignore_index=True)
+
+# Configure output
+columns_s8 = ['ID', 'Action', 'Unique Identifier', 'Attribute Path', 'Locale', 'Attribute Long Name', 'Min Length', 'Max Length', 'Definition', 'Example', 'Business Rule']
+final_s8_df = final_s8_df[columns_s8]
+delete_attributes_s8_df = delete_attributes_s8_df[columns_s8]
+all_additions_attributes_s8_df = all_additions_attributes_s8_df[columns_s8]
 
 #######################
 ## S23 
@@ -721,7 +735,8 @@ maxeda_s23_delete_df = maxeda_s23_df[maxeda_s23_df['Table Name'].isin(LookupTabl
 maxeda_s23_delete_df['Action'] = 'Delete'
 
 maxeda_s23_total_df = pd.concat([maxeda_s23_total_df, maxeda_s23_delete_df], ignore_index=True)
-   
+
+
     #######################
     ## Add
     #######################
@@ -777,9 +792,14 @@ for picklist_id, lookup_table_name in LookupTable_add_total_set:
     # Append the rows to the new DataFrame
     # maxeda_s23_total_df = maxeda_s23_total_df.append(first_row, ignore_index=True)
     # maxeda_s23_total_df = maxeda_s23_total_df.append(second_row, ignore_index=True)
-    maxeda_s23_total_df = pd.concat([maxeda_s23_total_df, pd.DataFrame([first_row]), pd.DataFrame([second_row])], ignore_index=True)
+    
+    all_additions_attributes_s23_df = pd.DataFrame(columns=list(maxeda_s23_delete_df.columns))
+    all_additions_attributes_s23_df = pd.concat([all_additions_attributes_s23_df, pd.DataFrame([first_row]), pd.DataFrame([second_row])], ignore_index=True)
 
-    print(maxeda_s23_total_df)
+
+    maxeda_s23_total_df = pd.concat([maxeda_s23_total_df, all_additions_attributes_s23_df], ignore_index=True)
+ 
+    # print(maxeda_s23_total_df)
 
 
 #######################
@@ -803,7 +823,7 @@ for picklist_id, lookup_table_name in LookupTable_add_total_set:
         f'{lookup_table_name}//fr_FR': new_picklist_values_df['Values in French used for user interface ']
     })
 
-    print(f"lookup table name: {lookup_table_name}")
+    # print(f"lookup table name: {lookup_table_name}")
 
     # Add to final dataframe 
     final_lookupdata_df.append({'df': reconfigured_df, 'filename': 'NO FILE: addition', 'sheet_name': lookup_table_name, 'Picklist': picklist_id})
@@ -813,69 +833,169 @@ for picklist_id, lookup_table_name in LookupTable_add_total_set:
 ###################
 ## Write output
 ###################
-print('### Output ###')
-print('## S7 ##')
-# Combine the two DataFrames into one new DataFrame
-final_s7_df = pd.concat([delete_attributes_s7_df, all_additions_attributes_s7_df, changes_s7_df], ignore_index=True)
-
-# Filter columns for the output
-columns_s7 = [
-    "ID", "Action", "Unique Identifier", "Attribute Type", "Attribute Name",
-    "Attribute Long Name", "Attribute Parent Name", "Data Type", "Display Type",
-    "Is Collection", "Is Inheritable", "Is Localizable", "Is Complex", "Is Lookup",
-    "Is Required", "Is ReadOnly", "Is Hidden", "Show At Entity Creation?", "Is Searchable",
-    "Is Null Value Search Required", "Generate Report Table Column?", "Default Value",
-    "Minimum Length", "Maximum Length", "Range From", "Is Range From Inclusive",
-    "Range To", "Is Range To Inclusive", "Precision", "Use Arbitrary Precision?",
-    "UOM Type", "Allowed UOMs", "Default UOM", "Allowable Values", "LookUp Table Name",
-    "Lookup Display Columns", "Lookup Search Columns", "Lookup Display Format",
-    "Lookup Sort Order", "Export Format", "Sort Order", "Definition", "Example",
-    "Business Rule", "Label", "Extension", "Web URI", "Enable History",
-    "Apply Time Zone Conversion", "Attribute Regular Expression", "Is UOM Localizable"
-]
-
-final_s7_df = final_s7_df.loc[:, columns_s7]
-
-print('## S8 ##')
-# Filtering the columns for the output as per specification
-
-final_s8_df = pd.concat([delete_attributes_s8_df, all_additions_attributes_s8_df], ignore_index=True)
 
 
-columns_s8 = ['ID', 'Action', 'Unique Identifier', 'Attribute Path', 'Locale', 'Attribute Long Name', 'Min Length', 'Max Length', 'Definition', 'Example', 'Business Rule']
-final_s8_df = final_s8_df[columns_s8]
-
-print('## Lookupdata ##')
+print('## Metadata ##')
 # Create a DataFrame to store data on first metadata sheet
-metadata_sheet = {
-    'LookupTableName': [item['sheet_name'] for item in final_lookupdata_df],
-    'SheetName': [item['sheet_name'] for item in final_lookupdata_df],
-    'Load Lookup?': ['Yes'] * len(final_lookupdata_df)
-}
-metadata_sheet_df = pd.DataFrame(metadata_sheet)
+
+def metadata_lookupvalues(dataframe):
+    metadata_sheet = {
+        'LookupTableName': [item['sheet_name'] for item in dataframe],
+        'SheetName': [item['sheet_name'] for item in dataframe],
+        'Load Lookup?': ['Yes'] * len(dataframe)
+    }
+    metadata_sheet_df = pd.DataFrame(metadata_sheet)
+
+    return metadata_sheet_df
+
+def metadata_s7_s8_s23(physical_sheet_name):
+    # Split physical_sheet_name into parts before and after the first "-"
+    parts = physical_sheet_name.split("-", 1)
+    sheet_no = parts[0].strip() if len(parts) > 0 else ""
+    data_model_type_name = parts[1].strip() if len(parts) > 1 else ""
+
+    # Create the metadata dictionary
+    metadata_sheet = {
+        'Sheet No': [sheet_no],
+        'DataModel Type Name': [data_model_type_name],
+        'Physical Sheet Name': [physical_sheet_name],
+        'Load Lookup?': ['Yes']
+    }
+
+    # Convert the dictionary to a DataFrame
+    metadata_sheet_df = pd.DataFrame(metadata_sheet)
+
+    return metadata_sheet_df
 
 output_file_path_attributes = os.path.join(os.getcwd(), 'GS1_vs_Datamodel_Comparison_Attributes.xlsx')
 output_file_path_lookupdata = os.path.join(os.getcwd(), 'LookupData.xlsx')
 
+############################
+## Combined output
+############################
 print('## Output writer ##')
-# Use ExcelWriter to write DataFrame to an Excel file
+# Write S7, S8 and S23
 with pd.ExcelWriter(output_file_path_attributes, engine='openpyxl') as writer:
     print("## S7 ##")
     final_s7_df.to_excel(writer, sheet_name='S7 - Attribute', index=False)
     print("## S8 ##")
     final_s8_df.to_excel(writer, sheet_name='S8 - Attribute - Locale', index=False)
-    
-# Use ExcelWriter to write DataFrame to an Excel file
+    print("## S23 ##")
+    maxeda_s23_total_df.to_excel(writer, sheet_name='S23 - Lookup Model', index=False)   
+
+
+# Write lookup tabale values
 with pd.ExcelWriter(output_file_path_lookupdata, engine='openpyxl') as writer:
     print("## LookupData ##")
-    
+
+    # Create metadata data frame
+    metadata_lookupvalues_total = metadata_lookupvalues(final_lookupdata_df)
     # Write the metadata DataFrame as the first sheet named 'Metadata'
-    metadata_sheet_df.to_excel(writer, sheet_name='Metadata', index=False)
+    metadata_lookupvalues_total.to_excel(writer, sheet_name='Metadata', index=False)
 
     # Write each DataFrame to its respective sheet
     for item in tqdm(final_lookupdata_df, desc="Writing lookupdata sheets"):
         # Write DataFrame to a sheet named after the original sheet_name
         item['df'].to_excel(writer, sheet_name=item['sheet_name'], index=False)
+
+############################
+## Output in workflow
+############################
+
+# Write deletions of lookup data values
+with pd.ExcelWriter(os.path.join(os.getcwd(), '1_Delete_LookupData_Values.xlsx'), engine='openpyxl') as writer:
+    print("## 1.1 - Deletions - LookupData delete values##")
+ 
+    # Create metadata data frame
+    metadata_lookupvalues_delete = metadata_lookupvalues(delete_lookupdata_df)   
+    # Write the metadata DataFrame as the first sheet named 'Metadata'
+    metadata_lookupvalues_delete.to_excel(writer, sheet_name='Metadata', index=False)
+
+    # Write each DataFrame to its respective sheet
+    for item in tqdm(delete_lookupdata_df, desc="Writing lookupdata sheets"):
+        # Write DataFrame to a sheet named after the original sheet_name
+        item['df'].to_excel(writer, sheet_name=item['sheet_name'], index=False)
+
+
+with pd.ExcelWriter(os.path.join(os.getcwd(), '2_Delete_LookupData_Tables_S23.xlsx'), engine='openpyxl') as writer:
+    print("## 1.2 - Deletions - LookUp Table S23 ##")
+    
+    # Create metadata data frame
+    metadata_s23_delete = metadata_s7_s8_s23('S23 - Lookup Model')   
+    # Write the metadata DataFrame as the first sheet named 'Metadata'
+    metadata_s23_delete.to_excel(writer, sheet_name='Metadata', index=False)
+    
+    maxeda_s23_delete_df.to_excel(writer, sheet_name='S23 - Lookup Model', index=False)
+
+
+with pd.ExcelWriter(os.path.join(os.getcwd(), '3_Delete_Attributes_S8.xlsx'), engine='openpyxl') as writer:
+    print("## 1.3 - Deletions - Attributes S8 ##")
+
+    # Create metadata data frame
+    metadata_s8_delete = metadata_s7_s8_s23('S8 - Attribute - Locale')   
+    # Write the metadata DataFrame as the first sheet named 'Metadata'
+    metadata_s8_delete.to_excel(writer, sheet_name='Metadata', index=False)
+
+    delete_attributes_s8_df.to_excel(writer, sheet_name='S8 - Attribute - Locale', index=False)
+
+with pd.ExcelWriter(os.path.join(os.getcwd(), '4_Delete_Attributes_S7.xlsx'), engine='openpyxl') as writer:
+    print("## 1.4 - Deletions - Attributes S7 ##")
+
+    # Create metadata data frame
+    metadata_s7_delete = metadata_s7_s8_s23('S7 - Attribute')   
+    # Write the metadata DataFrame as the first sheet named 'Metadata'
+    metadata_s7_delete.to_excel(writer, sheet_name='Metadata', index=False)
+
+    delete_attributes_s7_df.to_excel(writer, sheet_name='S7 - Attribute', index=False)
+
+############ Delete Bricks, Families, Segments & Add Bricks, Families, Segments 
+
+with pd.ExcelWriter(os.path.join(os.getcwd(), '7_Add_Attributes_S7.xlsx'), engine='openpyxl') as writer:
+    print("## 2.2 - Additions - Attributes S7 ##")
+
+    # Create metadata data frame
+    metadata_s7_add = metadata_s7_s8_s23('S7 - Attribute')   
+    # Write the metadata DataFrame as the first sheet named 'Metadata'
+    metadata_s7_add.to_excel(writer, sheet_name='Metadata', index=False)
+
+    final_s7_additions_changes_df.to_excel(writer, sheet_name='S7 - Attribute', index=False)
+
+with pd.ExcelWriter(os.path.join(os.getcwd(), '8_Add_Attributes_S8.xlsx'), engine='openpyxl') as writer:
+    print("## 2.2 - Additions - Attributes S8 ##")
+
+    # Create metadata data frame
+    metadata_s8_add = metadata_s7_s8_s23('S8 - Attribute - Locale')   
+    # Write the metadata DataFrame as the first sheet named 'Metadata'
+    metadata_s8_add.to_excel(writer, sheet_name='Metadata', index=False)
+
+    all_additions_attributes_s8_df.to_excel(writer, sheet_name='S8 - Attribute - Locale', index=False)
+
+with pd.ExcelWriter(os.path.join(os.getcwd(), '9_Add_LookupData_Tables_S23.xlsx'), engine='openpyxl') as writer:
+    print("## 2.3 - Additions - LookUp Table S23 ##")
+
+    # Create metadata data frame
+    metadata_s23_add = metadata_s7_s8_s23('S23 - Lookup Model')   
+    # Write the metadata DataFrame as the first sheet named 'Metadata'
+    metadata_s23_add.to_excel(writer, sheet_name='Metadata', index=False)
+
+    all_additions_attributes_s23_df.to_excel(writer, sheet_name='S23 - Lookup Model', index=False)
+
+with pd.ExcelWriter(os.path.join(os.getcwd(), '10_Add_LookupData_Values.xlsx'), engine='openpyxl') as writer:
+    print("## 2.4 - Additions - LookupData values##")
+    
+    # Filter the list for items with 'filename' == 'NO FILE: addition'
+    lookupvalues_add_df = [item for item in final_lookupdata_df if item['filename'] == 'NO FILE: addition']
+
+    # Create metadata data frame
+    metadata_lookupvalues_add = metadata_lookupvalues(lookupvalues_add_df)   
+    # Write the metadata DataFrame as the first sheet named 'Metadata'
+    metadata_lookupvalues_add.to_excel(writer, sheet_name='Metadata', index=False)
+
+    # Write each DataFrame to its respective sheet if 'filename' is 'NO FILE: addition'
+    for item in tqdm(lookupvalues_add_df, desc="Writing lookupdata sheets"):
+        # Write DataFrame to a sheet named after the original sheet_name
+        item['df'].to_excel(writer, sheet_name=item['sheet_name'], index=False)
+
 
 
 ####################
