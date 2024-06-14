@@ -530,7 +530,7 @@ print(f'## Changes ##')
 overlap_attributes_df = gs1_df_attributes_processed[gs1_df_attributes_processed['FieldID'].isin(attribute_overlap_s7_GS1ID_set)].copy()
 
 # Step 1: Duplicate and prefix selected columns in maxeda_s7_df to compare including the key being attribute code
-columns_to_compare = ['Attribute code','Data Type', 'Display Type', 'Precision', 'Allowed UOMs', 'Default UOM', 'Is Collection', 'LookUp Table Name']
+columns_to_compare = ['Attribute code','Data Type', 'Display Type', 'Precision', 'Allowed UOMs', 'Is Collection', 'LookUp Table Name']
 
 # Create a new DataFrame, maxeda_s7_changes_df, with only the specified columns from maxeda_s7_df
 maxeda_s7_changes_df = maxeda_s7_df_category[columns_to_compare].copy()
@@ -731,7 +731,7 @@ maxeda_s23_total_df = pd.DataFrame(columns=maxeda_s23_df.columns)
     ## Delete
     #######################
 
-maxeda_s23_delete_df = maxeda_s23_df[maxeda_s23_df['Table Name'].isin(LookupTable_add_total_set)].copy()
+maxeda_s23_delete_df = maxeda_s23_df[maxeda_s23_df['Table Name'].isin(LookupTable_delete_total_set)].copy()
 maxeda_s23_delete_df['Action'] = 'Delete'
 
 maxeda_s23_total_df = pd.concat([maxeda_s23_total_df, maxeda_s23_delete_df], ignore_index=True)
@@ -848,18 +848,30 @@ def metadata_lookupvalues(dataframe):
 
     return metadata_sheet_df
 
-def metadata_s7_s8_s23(physical_sheet_name):
-    # Split physical_sheet_name into parts before and after the first "-"
-    parts = physical_sheet_name.split("-", 1)
-    sheet_no = parts[0].strip() if len(parts) > 0 else ""
-    data_model_type_name = parts[1].strip() if len(parts) > 1 else ""
+def metadata_s7_s8_s23(physical_sheet_names):
+    # Initialize lists to hold metadata
+    sheet_nos = []
+    data_model_type_names = []
+    load_lookups = []
+    physical_sheet_names_list = []
+
+    # Process each physical sheet name
+    for physical_sheet_name in physical_sheet_names:
+        parts = physical_sheet_name.split("-", 1)
+        sheet_no = parts[0].strip() if len(parts) > 0 else ""
+        data_model_type_name = parts[1].strip() if len(parts) > 1 else ""
+        
+        sheet_nos.append(sheet_no)
+        data_model_type_names.append(data_model_type_name)
+        physical_sheet_names_list.append(physical_sheet_name)
+        load_lookups.append('Yes')
 
     # Create the metadata dictionary
     metadata_sheet = {
-        'Sheet No': [sheet_no],
-        'DataModel Type Name': [data_model_type_name],
-        'Physical Sheet Name': [physical_sheet_name],
-        'Load Lookup?': ['Yes']
+        'Sheet No': sheet_nos,
+        'DataModel Type Name': data_model_type_names,
+        'Physical Sheet Name': physical_sheet_names_list,
+        'Load Lookup?': load_lookups
     }
 
     # Convert the dictionary to a DataFrame
@@ -950,27 +962,8 @@ with pd.ExcelWriter(os.path.join(os.getcwd(), '4_Delete_Attributes_S7.xlsx'), en
 
 ############ Delete Bricks, Families, Segments & Add Bricks, Families, Segments 
 
-with pd.ExcelWriter(os.path.join(os.getcwd(), '7_Add_Attributes_S7.xlsx'), engine='openpyxl') as writer:
-    print("## 2.2 - Additions - Attributes S7 ##")
 
-    # Create metadata data frame
-    metadata_s7_add = metadata_s7_s8_s23('S7 - Attribute')   
-    # Write the metadata DataFrame as the first sheet named 'Metadata'
-    metadata_s7_add.to_excel(writer, sheet_name='Metadata', index=False)
-
-    final_s7_additions_changes_df.to_excel(writer, sheet_name='S7 - Attribute', index=False)
-
-with pd.ExcelWriter(os.path.join(os.getcwd(), '8_Add_Attributes_S8.xlsx'), engine='openpyxl') as writer:
-    print("## 2.2 - Additions - Attributes S8 ##")
-
-    # Create metadata data frame
-    metadata_s8_add = metadata_s7_s8_s23('S8 - Attribute - Locale')   
-    # Write the metadata DataFrame as the first sheet named 'Metadata'
-    metadata_s8_add.to_excel(writer, sheet_name='Metadata', index=False)
-
-    all_additions_attributes_s8_df.to_excel(writer, sheet_name='S8 - Attribute - Locale', index=False)
-
-with pd.ExcelWriter(os.path.join(os.getcwd(), '9_Add_LookupData_Tables_S23.xlsx'), engine='openpyxl') as writer:
+with pd.ExcelWriter(os.path.join(os.getcwd(), '5_Add_LookupData_Tables_S23.xlsx'), engine='openpyxl') as writer:
     print("## 2.3 - Additions - LookUp Table S23 ##")
 
     # Create metadata data frame
@@ -980,7 +973,29 @@ with pd.ExcelWriter(os.path.join(os.getcwd(), '9_Add_LookupData_Tables_S23.xlsx'
 
     all_additions_attributes_s23_df.to_excel(writer, sheet_name='S23 - Lookup Model', index=False)
 
-with pd.ExcelWriter(os.path.join(os.getcwd(), '10_Add_LookupData_Values.xlsx'), engine='openpyxl') as writer:
+
+with pd.ExcelWriter(os.path.join(os.getcwd(), '6_Add_Attributes_S7.xlsx'), engine='openpyxl') as writer:
+    print("## 2.2 - Additions - Attributes S7 ##")
+
+    # Create metadata data frame
+    metadata_s7_add = metadata_s7_s8_s23(['S7 - Attribute', 'S8 - Attribute - Locale'])   
+    # Write the metadata DataFrame as the first sheet named 'Metadata'
+    metadata_s7_add.to_excel(writer, sheet_name='Metadata', index=False)
+
+    final_s7_additions_changes_df.to_excel(writer, sheet_name='S7 - Attribute', index=False)
+    all_additions_attributes_s8_df.to_excel(writer, sheet_name='S8 - Attribute - Locale', index=False)
+
+# with pd.ExcelWriter(os.path.join(os.getcwd(), '8_Add_Attributes_S8.xlsx'), engine='openpyxl') as writer:
+#     print("## 2.2 - Additions - Attributes S8 ##")
+
+#     # Create metadata data frame
+#     metadata_s8_add = metadata_s7_s8_s23('S8 - Attribute - Locale')   
+#     # Write the metadata DataFrame as the first sheet named 'Metadata'
+#     metadata_s8_add.to_excel(writer, sheet_name='Metadata', index=False)
+
+#     all_additions_attributes_s8_df.to_excel(writer, sheet_name='S8 - Attribute - Locale', index=False)
+
+with pd.ExcelWriter(os.path.join(os.getcwd(), '7_Add_LookupData_Values.xlsx'), engine='openpyxl') as writer:
     print("## 2.4 - Additions - LookupData values##")
     
     # Filter the list for items with 'filename' == 'NO FILE: addition'

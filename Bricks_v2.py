@@ -24,6 +24,8 @@ def extract_parents(parent_path):
 def create_category_df(categories, level, sheet):
     print(f'### Create categories at {level} level ###')
 
+    # print(sheet)
+    # exit()
     # Initialize an empty DataFrame for categories with specified columns
     columns = sheet.drop(columns=['Segment Code', 'Family Code', 'Class Code']).columns
     Category = pd.DataFrame(columns=columns)
@@ -42,18 +44,25 @@ def create_category_df(categories, level, sheet):
             {'title_prefix': 'FR ', 'locale': 'fr_FR'}
         ]
 
+
+
     # Process each locale setting
     all_categories = pd.DataFrame()
     for setting in locales:
         _Category = process_locale_setting(Category.copy(), setting, name_col, path_cols, level)
         all_categories = pd.concat([all_categories, _Category], ignore_index=True)
 
+    # print(all_categories)
+    # exit()    
+    
     if sheet.equals(maxeda_s10):
         # Duplicate for 'BE' locales
         be_categories = all_categories.copy()
         be_categories['Locale'] = be_categories['Locale'].replace({'nl_NL': 'nl_BE', 'fr_FR': 'fr_BE'})
         all_categories = pd.concat([all_categories, be_categories], ignore_index=True)
 
+    # print(all_categories)
+    # exit()
     return all_categories
 
 def get_path_cols(level):
@@ -107,22 +116,6 @@ def delete_category_df(categories, sheet):
     # Add the delete action
     Delete_categories['Action'] = 'Delete'
     
-    # # Apply function to determine the level based on 'Parent Category Path'
-    # def get_level_delete(parent_path):
-    #     slash_count = parent_path.count('//')
-    #     if slash_count == 2:
-    #         return 'brick'
-    #     elif slash_count == 1:
-    #         return 'class'
-    #     elif slash_count == 0:
-    #         return 'family'
-    #     elif slash_count == 0:
-    #         return 'segment'
-    #     return 'unknown'  # Default case if none match
-
-    # Create a new column 'Level' based on the slash count
-    # Delete_categories['Origin'] = Delete_categories['Parent Category Path'].apply(get_level_delete).apply(lambda x: f"delete {x}")
-
     return Delete_categories
 
 # Set file paths and read the specified sheets
@@ -204,6 +197,7 @@ def sheet(sheet_df):
         ('class', gs1_active_classes_set - datamodel_classes_set)
     ]
 
+    
     # Loop through each level to generate corresponding DataFrames
     for level, selection in levels_and_data_new:
         new_categories = create_category_df(selection, level, sheet_df)
@@ -245,36 +239,143 @@ def sheet(sheet_df):
     #####################
     print('### Hierarchy change ###')
     # Merge the two dataframes on Brick Code
-    comparison_df_hierarchy = pd.merge(gs1_df_active, sheet_df, how='inner', left_on='Brick Code', right_on='Category Name')
+    comparison_df_hierarchy_bricks = pd.merge(gs1_df_active, sheet_df, how='inner', left_on='Brick Code', right_on='Category Name')
 
     # Check for mismatched parents using trimmed and type-consistent comparisons
-    change_hierarchy_df = comparison_df_hierarchy[
-        (comparison_df_hierarchy['Segment Code_x'] != comparison_df_hierarchy['Segment Code_y']) |
-        (comparison_df_hierarchy['Family Code_x'] != comparison_df_hierarchy['Family Code_y']) |
-        (comparison_df_hierarchy['Class Code_x'] != comparison_df_hierarchy['Class Code_y'])
+    change_hierarchy_bricks_df = comparison_df_hierarchy_bricks[
+        (comparison_df_hierarchy_bricks['Segment Code_x'] != comparison_df_hierarchy_bricks['Segment Code_y']) |
+        (comparison_df_hierarchy_bricks['Family Code_x'] != comparison_df_hierarchy_bricks['Family Code_y']) |
+        (comparison_df_hierarchy_bricks['Class Code_x'] != comparison_df_hierarchy_bricks['Class Code_y'])
     ]
 
-    change_hierarchy_set = set(change_hierarchy_df['Brick Code'].dropna())
+    # Create the new 'Parent Category Path' based on the given conditions
+    change_hierarchy_bricks_df['Parent Category Path'] = change_hierarchy_bricks_df.apply(
+        lambda row: f"GS1//{row['Segment Code_x']}//{row['Family Code_x']}//{row['Class Code_x']}" 
+        if row['Hierarchy Name'] == 'GS1 Hierarchy' 
+        else f"{row['Segment Code_x']}//{row['Family Code_x']}//{row['Class Code_x']}",
+        axis=1
+    )
 
-    # print('change hierarchy')
-    # print(change_hierarchy_set)
+    # print(change_hierarchy_bricks_df)
+    print(len(change_hierarchy_bricks_df))
+    # exit()
 
-    delete_old_hierarchy = delete_category_df(change_hierarchy_set, sheet_df)
-    create_new_hierarchy = create_category_df(change_hierarchy_set, 'brick', sheet_df)
+    change_hierarchy_bricks_df = change_hierarchy_bricks_df.fillna('')
+    all_categories.append(change_hierarchy_bricks_df)
 
-    all_categories.append(delete_old_hierarchy)
-    all_categories.append(create_new_hierarchy)
+    # print(gs1_df_active['Class Code'])
+    # print(sheet_df['Class Code'])
+    
 
-    # Concatenate all DataFrames into one for S9 - Category, if there are any DataFrames to concatenate
+    # Merge the two dataframes on Class Code
+    comparison_df_hierarchy_classes = pd.merge(gs1_df_active, sheet_df, how='inner', left_on='Class Code', right_on='Class Code')
+
+    # Check for mismatched parents using trimmed and type-consistent comparisons
+    change_hierarchy_classes_df = comparison_df_hierarchy_classes[
+        (comparison_df_hierarchy_classes['Segment Code_x'] != comparison_df_hierarchy_classes['Segment Code_y']) |
+        (comparison_df_hierarchy_classes['Family Code_x'] != comparison_df_hierarchy_classes['Family Code_y']) 
+    ]
+
+    # Create the new 'Parent Category Path' based on the given conditions
+    change_hierarchy_classes_df['Parent Category Path'] = change_hierarchy_classes_df.apply(
+        lambda row: f"GS1//{row['Segment Code_x']}//{row['Family Code_x']}" 
+        if row['Hierarchy Name'] == 'GS1 Hierarchy' 
+        else f"{row['Segment Code_x']}//{row['Family Code_x']}",
+        axis=1
+    )
+
+    change_hierarchy_classes_df = change_hierarchy_classes_df.fillna('')
+    all_categories.append(change_hierarchy_classes_df)
+    print(len(change_hierarchy_classes_df))
+    # print(change_hierarchy_classes_df)
+    # exit()
+
+    # Merge the two dataframes on Family Code
+    comparison_df_hierarchy_families = pd.merge(gs1_df_active, sheet_df, how='inner', left_on='Family Code', right_on='Family Code')
+
+    # Check for mismatched parents using trimmed and type-consistent comparisons
+    change_hierarchy_families_df = comparison_df_hierarchy_families[
+        (comparison_df_hierarchy_families['Segment Code_x'] != comparison_df_hierarchy_families['Segment Code_y'])  
+    ]
+
+    # Create the new 'Parent Category Path' based on the given conditions
+    change_hierarchy_families_df['Parent Category Path'] = change_hierarchy_families_df.apply(
+        lambda row: f"GS1//{row['Segment Code_x']}" 
+        if row['Hierarchy Name'] == 'GS1 Hierarchy' 
+        else f"{row['Segment Code_x']}",
+        axis=1
+    )
+
+    change_hierarchy_families_df = change_hierarchy_families_df.fillna('')
+    all_categories.append(change_hierarchy_families_df)
+    # print(change_hierarchy_families_df)
+    # exit()
+
+################################################
+
+    def merge_and_check_hierarchy(gs1_df, sheet_df, merge_columns, check_columns, hierarchy_name):
+        # Merge the two dataframes on the specified columns
+        left_on, right_on = merge_columns
+        comparison_df = pd.merge(gs1_df, sheet_df, how='inner', left_on=left_on, right_on=right_on)
+
+        # Check for mismatched parents using the provided columns
+        condition = False
+        for col_x, col_y in check_columns:
+            condition |= (comparison_df[f'{col_x}_x'] != comparison_df[f'{col_y}_y'])
+
+        change_hierarchy_df = comparison_df[condition]
+
+        # Create the new 'Parent Category Path' based on the given conditions
+        change_hierarchy_df['Parent Category Path'] = change_hierarchy_df.apply(
+            lambda row: f"GS1//{row[f'{check_columns[0][0]}_x']}//{'//'.join([row[f'{col[0]}_x'] for col in check_columns[1:]])}" 
+            if row['Hierarchy Name'] == hierarchy_name
+            else f"{row[f'{check_columns[0][0]}_x']}//{'//'.join([row[f'{col[0]}_x'] for col in check_columns[1:]])}",
+            axis=1
+        )
+
+        return change_hierarchy_df.fillna('')
+
+    # Specify the hierarchy name
+    hierarchy_name = 'GS1 Hierarchy'
+
+    # Define the check columns for each level
+    brick_check_columns = [('Segment Code', 'Segment Code'), ('Family Code', 'Family Code'), ('Class Code', 'Class Code')]
+    class_check_columns = [('Segment Code', 'Segment Code'), ('Family Code', 'Family Code')]
+    family_check_columns = [('Segment Code', 'Segment Code')]
+
+    # Process each hierarchy level
+    # For bricks, the merge columns are different
+    change_hierarchy_bricks_df = merge_and_check_hierarchy(gs1_df_active, sheet_df, ('Brick Code', 'Category Name'), brick_check_columns, hierarchy_name)
+    # For classes and families, the merge columns are the same
+    change_hierarchy_classes_df = merge_and_check_hierarchy(gs1_df_active, sheet_df, ('Class Code', 'Category Name'), class_check_columns, hierarchy_name)
+    change_hierarchy_families_df = merge_and_check_hierarchy(gs1_df_active, sheet_df, ('Family Code', 'Category Name'), family_check_columns, hierarchy_name)
+
+    # Append the results to the all_categories list
+    all_categories.append(change_hierarchy_bricks_df)
+    all_categories.append(change_hierarchy_classes_df)
+    all_categories.append(change_hierarchy_families_df)
+
+    # Output the number of mismatched categories for bricks, classes, and families
+    print(len(change_hierarchy_bricks_df))
+    print(len(change_hierarchy_classes_df))
+    print(change_hierarchy_classes_df)
+    print(len(change_hierarchy_families_df))
+
+    # Write change_hierarchy_classes_df to an Excel file
+    output_file_path = 'change_hierarchy_classes_df.xlsx'
+    change_hierarchy_classes_df.to_excel(output_file_path, index=False)
+
+
+################################################
+
+    # Concatenate all DataFrames into one, if there are any DataFrames to concatenate
     if all_categories:
         final_all_categories = pd.concat(all_categories, ignore_index=True)
     else:
         final_all_categories = pd.DataFrame()  # Fallback to an empty DataFrame if no data
 
-
     return final_all_categories
 
-    
 
 ###################
 ## Write output
@@ -284,11 +385,13 @@ print('### Output ###')
 final_all_categories_s9 = sheet(maxeda_s9)
 final_all_categories_s9 = final_all_categories_s9[['ID', 'Action', 'Unique Identifier', 'Category Name', 'Category Long Name', 'Parent Category Path', 'Hierarchy Name']]
 
+exit() 
+
 final_all_categories_locale_combined = sheet(maxeda_s10)    
 final_all_categories_locale_combined = final_all_categories_locale_combined[['ID', 'Action', 'Unique Identifier', 'Category Name', 'Parent Category Path', 'Hierarchy Name', 'Locale', 'Category Long Name']]
 
 
-print(final_all_categories_locale_combined)
+# print(final_all_categories_locale_combined)
 
 # Write the concatenated DataFrame to an Excel file
 output_file_path = os.path.join(os.getcwd(), 'GS1_vs_Datamodel_Comparison_Bricks.xlsx')
