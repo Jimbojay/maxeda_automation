@@ -107,7 +107,7 @@ maxeda_s23_df = pd.read_excel(datamodel_file_path, sheet_name='S23 - Lookup Mode
 
 
 ####################
-## LookupData changes & delete
+## LookupData
 ####################
 
 print(f'### Lookup tables ###')
@@ -437,7 +437,7 @@ delete_attributes_s7_df = delete_attributes(attribute_delete_s7_GS1ID_set, maxed
 attribute_delete_s7_MaxedaIDs_set = set(delete_attributes_s7_df['ID'].dropna())
 attribute_delete_s7_LookupTableName_set = set(delete_attributes_s7_df['LookUp Table Name'].dropna())
 if 'YesNo' in attribute_delete_s7_LookupTableName_set:
-    attribute_delete_s7_LookupTableName_set.remove('YesNo')
+    attribute_delete_s7_LookupTableName_set.remove('YesNo') #TURE FALS OOK IMPLEMENTEREN
 
     ####################
     ## Additions
@@ -616,7 +616,7 @@ s7_change_from_LookupTableName_set = set(
 
 # Combine the two DataFrames into one new DataFrame
 final_s7_df = pd.concat([delete_attributes_s7_df, all_additions_attributes_s7_df, changes_s7_df], ignore_index=True)
-final_s7_additions_changes_df = pd.concat([all_additions_attributes_s7_df, changes_s7_df], ignore_index=True)
+final_s7_additions_and_changes_df = pd.concat([all_additions_attributes_s7_df, changes_s7_df], ignore_index=True)
 
 # Filter columns for the output
 columns_s7 = [
@@ -636,7 +636,9 @@ columns_s7 = [
 
 final_s7_df = final_s7_df[columns_s7]
 delete_attributes_s7_df = delete_attributes_s7_df[columns_s7]
-final_s7_additions_changes_df = final_s7_additions_changes_df[columns_s7]
+final_s7_additions_and_changes_df = final_s7_additions_and_changes_df[columns_s7]
+# all_additions_attributes_s7_df = all_additions_attributes_s7_df[columns_s7]
+# changes_s7_df = changes_s7_df[columns_s7]
 
 ####################
 ## S8 
@@ -914,56 +916,8 @@ with pd.ExcelWriter(output_file_path_lookupdata, engine='openpyxl') as writer:
 ## Output in workflow
 ############################
 
-# Write deletions of lookup data values
-with pd.ExcelWriter(os.path.join(os.getcwd(), '1_Delete_LookupData_Values.xlsx'), engine='openpyxl') as writer:
-    print("## 1.1 - Deletions - LookupData delete values##")
- 
-    # Create metadata data frame
-    metadata_lookupvalues_delete = metadata_lookupvalues(delete_lookupdata_df)   
-    # Write the metadata DataFrame as the first sheet named 'Metadata'
-    metadata_lookupvalues_delete.to_excel(writer, sheet_name='Metadata', index=False)
 
-    # Write each DataFrame to its respective sheet
-    for item in tqdm(delete_lookupdata_df, desc="Writing lookupdata sheets"):
-        # Write DataFrame to a sheet named after the original sheet_name
-        item['df'].to_excel(writer, sheet_name=item['sheet_name'], index=False)
-
-
-with pd.ExcelWriter(os.path.join(os.getcwd(), '2_Delete_LookupData_Tables_S23.xlsx'), engine='openpyxl') as writer:
-    print("## 1.2 - Deletions - LookUp Table S23 ##")
-    
-    # Create metadata data frame
-    metadata_s23_delete = metadata_s7_s8_s23('S23 - Lookup Model')   
-    # Write the metadata DataFrame as the first sheet named 'Metadata'
-    metadata_s23_delete.to_excel(writer, sheet_name='Metadata', index=False)
-    
-    maxeda_s23_delete_df.to_excel(writer, sheet_name='S23 - Lookup Model', index=False)
-
-
-with pd.ExcelWriter(os.path.join(os.getcwd(), '3_Delete_Attributes_S8.xlsx'), engine='openpyxl') as writer:
-    print("## 1.3 - Deletions - Attributes S8 ##")
-
-    # Create metadata data frame
-    metadata_s8_delete = metadata_s7_s8_s23('S8 - Attribute - Locale')   
-    # Write the metadata DataFrame as the first sheet named 'Metadata'
-    metadata_s8_delete.to_excel(writer, sheet_name='Metadata', index=False)
-
-    delete_attributes_s8_df.to_excel(writer, sheet_name='S8 - Attribute - Locale', index=False)
-
-with pd.ExcelWriter(os.path.join(os.getcwd(), '4_Delete_Attributes_S7.xlsx'), engine='openpyxl') as writer:
-    print("## 1.4 - Deletions - Attributes S7 ##")
-
-    # Create metadata data frame
-    metadata_s7_delete = metadata_s7_s8_s23('S7 - Attribute')   
-    # Write the metadata DataFrame as the first sheet named 'Metadata'
-    metadata_s7_delete.to_excel(writer, sheet_name='Metadata', index=False)
-
-    delete_attributes_s7_df.to_excel(writer, sheet_name='S7 - Attribute', index=False)
-
-############ Delete Bricks, Families, Segments & Add Bricks, Families, Segments 
-
-
-with pd.ExcelWriter(os.path.join(os.getcwd(), '5_Add_LookupData_Tables_S23.xlsx'), engine='openpyxl') as writer:
+with pd.ExcelWriter(os.path.join(os.getcwd(), '6_Add_LookupData_Tables_S23.xlsx'), engine='openpyxl') as writer:
     print("## 2.3 - Additions - LookUp Table S23 ##")
 
     # Create metadata data frame
@@ -973,8 +927,7 @@ with pd.ExcelWriter(os.path.join(os.getcwd(), '5_Add_LookupData_Tables_S23.xlsx'
 
     all_additions_attributes_s23_df.to_excel(writer, sheet_name='S23 - Lookup Model', index=False)
 
-
-with pd.ExcelWriter(os.path.join(os.getcwd(), '6_Add_Attributes_S7.xlsx'), engine='openpyxl') as writer:
+with pd.ExcelWriter(os.path.join(os.getcwd(), '7_Add_and_Change_Attributes_S7andS8.xlsx'), engine='openpyxl') as writer:
     print("## 2.2 - Additions - Attributes S7 ##")
 
     # Create metadata data frame
@@ -982,7 +935,7 @@ with pd.ExcelWriter(os.path.join(os.getcwd(), '6_Add_Attributes_S7.xlsx'), engin
     # Write the metadata DataFrame as the first sheet named 'Metadata'
     metadata_s7_add.to_excel(writer, sheet_name='Metadata', index=False)
 
-    final_s7_additions_changes_df.to_excel(writer, sheet_name='S7 - Attribute', index=False)
+    final_s7_additions_and_changes_df.to_excel(writer, sheet_name='S7 - Attribute', index=False)
     all_additions_attributes_s8_df.to_excel(writer, sheet_name='S8 - Attribute - Locale', index=False)
 
 # with pd.ExcelWriter(os.path.join(os.getcwd(), '8_Add_Attributes_S8.xlsx'), engine='openpyxl') as writer:
@@ -995,7 +948,7 @@ with pd.ExcelWriter(os.path.join(os.getcwd(), '6_Add_Attributes_S7.xlsx'), engin
 
 #     all_additions_attributes_s8_df.to_excel(writer, sheet_name='S8 - Attribute - Locale', index=False)
 
-with pd.ExcelWriter(os.path.join(os.getcwd(), '7_Add_LookupData_Values.xlsx'), engine='openpyxl') as writer:
+with pd.ExcelWriter(os.path.join(os.getcwd(), '8_Add_LookupData_Values.xlsx'), engine='openpyxl') as writer:
     print("## 2.4 - Additions - LookupData values##")
     
     # Filter the list for items with 'filename' == 'NO FILE: addition'
@@ -1010,6 +963,58 @@ with pd.ExcelWriter(os.path.join(os.getcwd(), '7_Add_LookupData_Values.xlsx'), e
     for item in tqdm(lookupvalues_add_df, desc="Writing lookupdata sheets"):
         # Write DataFrame to a sheet named after the original sheet_name
         item['df'].to_excel(writer, sheet_name=item['sheet_name'], index=False)
+
+
+# Write deletions of lookup data values
+with pd.ExcelWriter(os.path.join(os.getcwd(), '9_Delete_LookupData_Values.xlsx'), engine='openpyxl') as writer:
+    print("## 1.1 - Deletions - LookupData delete values##")
+ 
+    # Create metadata data frame
+    metadata_lookupvalues_delete = metadata_lookupvalues(delete_lookupdata_df)   
+    # Write the metadata DataFrame as the first sheet named 'Metadata'
+    metadata_lookupvalues_delete.to_excel(writer, sheet_name='Metadata', index=False)
+
+    # Write each DataFrame to its respective sheet
+    for item in tqdm(delete_lookupdata_df, desc="Writing lookupdata sheets"):
+        # Write DataFrame to a sheet named after the original sheet_name
+        item['df'].to_excel(writer, sheet_name=item['sheet_name'], index=False)
+
+
+with pd.ExcelWriter(os.path.join(os.getcwd(), '10_Delete_LookupData_Tables_S23.xlsx'), engine='openpyxl') as writer:
+    print("## 1.2 - Deletions - LookUp Table S23 ##")
+    
+    # Create metadata data frame
+    metadata_s23_delete = metadata_s7_s8_s23('S23 - Lookup Model')   
+    # Write the metadata DataFrame as the first sheet named 'Metadata'
+    metadata_s23_delete.to_excel(writer, sheet_name='Metadata', index=False)
+    
+    maxeda_s23_delete_df.to_excel(writer, sheet_name='S23 - Lookup Model', index=False)
+
+
+# with pd.ExcelWriter(os.path.join(os.getcwd(), '3_Delete_Attributes_S8.xlsx'), engine='openpyxl') as writer:
+#     print("## 1.3 - Deletions - Attributes S8 ##")
+
+#     # Create metadata data frame
+#     metadata_s8_delete = metadata_s7_s8_s23('S8 - Attribute - Locale')   
+#     # Write the metadata DataFrame as the first sheet named 'Metadata'
+#     metadata_s8_delete.to_excel(writer, sheet_name='Metadata', index=False)
+
+#     delete_attributes_s8_df.to_excel(writer, sheet_name='S8 - Attribute - Locale', index=False)
+
+with pd.ExcelWriter(os.path.join(os.getcwd(), '11_Delete_Attributes_S7_autotriggersS8.xlsx'), engine='openpyxl') as writer:
+    print("## 1.3 - Deletions - Attributes S7 ##")
+
+    # Create metadata data frame
+    metadata_s7_delete = metadata_s7_s8_s23('S7 - Attribute')   
+    # Write the metadata DataFrame as the first sheet named 'Metadata'
+    metadata_s7_delete.to_excel(writer, sheet_name='Metadata', index=False)
+
+    delete_attributes_s7_df.to_excel(writer, sheet_name='S7 - Attribute', index=False)
+
+############ Delete Bricks, Families, Segments & Add Bricks, Families, Segments 
+
+
+
 
 
 
