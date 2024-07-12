@@ -126,6 +126,7 @@ def delete_category_df(categories, sheet):
 gs1_file_path = os.getenv('path_datamodel_GS1')
 datamodel_file_path = os.getenv('path_datamodel_maxeda')
 CDB_MDM_mapping_path = os.getenv('path_CDB_MDM_mapping')
+CBD_GS1_mapping_path = os.getenv('path_CDB_GS1_mapping')
 file_path_workflowSKUs = os.getenv('file_path_workflowSKUs')
 # Get the output folder path from the environment variables
 output_folder = 'Output'
@@ -188,8 +189,11 @@ maxeda_s14_df = pd.read_excel(datamodel_file_path, sheet_name='S14 - CAT - ATTR'
 maxeda_s14_df['Category Name'] = maxeda_s14_df['Category Name'].astype(str)
 # print("maxeda_s14_df A:", maxeda_s14_df['Category Name'].dtype)
 
-print(f'## Read CDB_MDMAttributeMapping ##')
+print(f'## Read CDB_MDM_AttributeMapping ##')
 CDB_MDM_mapping_df = pd.read_excel(CDB_MDM_mapping_path, sheet_name='CDB_MDMAttributeMapping')
+
+print(f'## Read CDB_GS1_AttributeMapping ##')
+CDB_GS1_mapping_df = pd.read_excel(CBD_GS1_mapping_path, sheet_name='CDB_GS1Attributes')
 
 # Workflow
 print(f'## Read Workflow ##')
@@ -198,7 +202,10 @@ workflowSKUs_df = pd.read_excel(file_path_workflowSKUs, header=1)  # Header is i
 # Selecting required columns from the main DataFrame
 workflowSKUs_df_selected = workflowSKUs_df[['Brick', 'GTIN', 'VendorNumberSAP', 'ArticleLongName']]
 
-print("workflowSKUs_df_selected A:", workflowSKUs_df_selected['Brick'].dtype)
+# print(workflowSKUs_df_selected)
+# exit()
+
+# print("workflowSKUs_df_selected A:", workflowSKUs_df_selected['Brick'].dtype)
 print('\n  ### Establish active bricks ###')
 gs1_df_active= gs1_df[gs1_df['Brick activated'] == 'Yes']
 gs1_active_brick_set = set(gs1_df_active['Brick Code'].dropna())
@@ -294,7 +301,7 @@ def sheet(sheet_df):
         }).reset_index()  # Reset index to make the level a column again
 
         # Rename columns
-        result.columns = ['Category', 'Unique_GTIN_Count', 'Unique_VendorNumberSAP', 'Unique_ArticleLongName_Count']
+        result.columns = ['Category', 'unique_count_GTIN', 'unique_count_VendorNumberSAP', 'unique_count_ArticleLongName']
 
         # Add a new column to denote the level
         result['Level'] = level
@@ -348,7 +355,7 @@ def sheet(sheet_df):
 
         backlog_deletions = workflow_agg[workflow_agg['Category'].isin(backlog_deletion_set)].copy()
         if not backlog_deletions.empty:
-            backlog_deletions.loc[:, 'Reason_backlog'] = f'{category_name} deletion'
+            backlog_deletions.loc[:, 'Reason'] = f'{category_name} deletion'
 
         return workflow_set, final_deletion_set, backlog_deletions
 
@@ -451,7 +458,7 @@ def sheet(sheet_df):
 
         backlog_changes = workflow_agg[workflow_agg['Category'].isin(backlog_change_set)].copy()
         if not backlog_changes.empty:
-            backlog_changes.loc[:, 'Reason_backlog'] = reason
+            backlog_changes.loc[:, 'Reason'] = reason
 
         return final_change_set, backlog_changes
 
@@ -527,6 +534,17 @@ gs1_df_attributes_brick_active = gs1_df_attributes_brick[gs1_df_attributes_brick
 # Create a set of the 'FieldID' values from the filtered DataFrame
 gs1_attributes_GS1ID_set = set(gs1_df_attributes_brick_active['FieldID'].dropna())
 
+# Check if 'Attributename English' column has the value 'Battery size type code'
+mask = gs1_df_attributes_brick_active['FieldID'] == '8.384'
+
+# # Check if 'BatteryTypeCode' is in the set
+# if '8.384' in gs1_attributes_GS1ID_set:
+#     print("'BatteryTypeCode' is in the set")
+# else:
+#     print("'BatteryTypeCode' is not in the set")
+
+# exit()    
+
 
 ###################
 ## Maxeda datamodel
@@ -560,6 +578,15 @@ maxeda_s7_df_scope['Precision'] = maxeda_s7_df_scope['Precision'].str.replace(r'
 # Replace 'nan' strings with empty strings
 maxeda_s7_df_scope['Precision'] = maxeda_s7_df_scope['Precision'].replace('nan', '')
 
+# # Check if 'Attributename English' column has the value 'Battery size type code'
+# mask = maxeda_s7_df_scope['Attribute code'] == '8.384'
+
+# # Print 'Picklist ID' for rows where the condition is true
+# if mask.any():
+#     print(maxeda_s7_df_scope[mask]['Attribute code'].values[0])
+
+# exit()
+
 # Select scope
 maxeda_s8_df_scope = maxeda_s8_full_df[maxeda_s8_full_df['Attribute Path'].str.contains('Category Specific Attributes//|OneWS_.*OneWS_', na=False)].copy()
 
@@ -581,134 +608,187 @@ maxeda_s8_df_scope = maxeda_s8_df_scope[~maxeda_s8_df_scope['Attribute code'].st
 ## Workflow
 #####################################
 
-print("test")
-# Group by 'Brick' and count unique values of 'GTIN', 'ArticleLongName', and 'VendorNumberSAP'
-brick_aggregation_workflow_total_df = workflowSKUs_df.groupby('Brick').agg({
-    'GTIN': pd.Series.nunique,
-    'VendorNumberSAP': pd.Series.nunique,
-    'ArticleLongName': pd.Series.nunique    
-}).reset_index()
-
-# Rename columns for clarity
-brick_aggregation_workflow_total_df.columns = ['Brick', 'Unique_GTIN_Count', 'Unique_VendorNumberSAP', 'Unique_ArticleLongName_Count']
-
-# brick_workflow_total_df = workflowSKUs_df.copy()
-print("test1")
-
-brick_aggregation_workflow_with_attributes_df = pd.merge(
-    brick_aggregation_workflow_total_df,
+# print("test 1")
+brick_attributes_workflow_df = pd.merge(
+    workflowSKUs_df_selected[['Brick', 'GTIN', 'ArticleLongName', 'VendorNumberSAP']],
     maxeda_s14_df[['Category Name', 'Attribute Path']],
     how='inner',
     left_on='Brick',
     right_on='Category Name'
 )
-brick_aggregation_workflow_with_attributes_df.drop(columns=['Category Name'], inplace=True)
-# print(brick_workflow_with_attributes_df.columns)
-print("test2")
 
+
+# print(f'brick_attributes_workflow_df: {brick_attributes_workflow_df.head}')
+
+# print("test 2")
+# De-duplicate the mappping between Attribute Path and ID to be able to effectively join upon
+maxeda_s8_AttributePath_ID_mapping = maxeda_s8_full_df[['Attribute Path', 'ID']].copy()
+maxeda_s8_AttributePath_ID_mapping = maxeda_s8_AttributePath_ID_mapping.drop_duplicates(subset='ID')
+
+# print(f'brick_attributes_workflow_df2: {maxeda_s8_AttributePath_ID_mapping.head}')
+
+# print("test 3")
 # Perform the left join on 'Attribute Path' and select only the required columns
-brick_aggregation_workflow_with_attributes_df = pd.merge(
-    brick_aggregation_workflow_with_attributes_df, 
-    maxeda_s8_full_df[['Attribute Path', 'ID']], 
+brick_attributes_workflow_df2 = pd.merge(
+    brick_attributes_workflow_df, 
+    maxeda_s8_AttributePath_ID_mapping, 
     how='left', 
     on='Attribute Path'
 )
+# print(f'brick_attributes_workflow_df2: {brick_attributes_workflow_df2.head}')
 
-brick_aggregation_workflow_with_attributes_df = brick_aggregation_workflow_with_attributes_df.drop_duplicates(subset=['Attribute Path', 'ID', 'Brick'])
-
-# Group by 'ID' and sum the relevant columns
-MaxedaAttributeID_aggregation_workflow_df = brick_aggregation_workflow_with_attributes_df.groupby('ID').agg({
-    'Unique_GTIN_Count': 'sum',
-    'Unique_VendorNumberSAP': 'sum',
-    'Unique_ArticleLongName_Count': 'sum'
-}).reset_index()
-print("test3")
-
-
-
-# # Group by 'ID' and count unique values of 'GTIN', 'ArticleLongName', and 'VendorNumberSAP'
-# MaxedaAttributeID_aggregation_workflow_df = brick_workflow_with_attributes_df.groupby('ID').agg({
-#     'GTIN': pd.Series.nunique,
-#     'VendorNumberSAP': pd.Series.nunique,
-#     'ArticleLongName': pd.Series.nunique    
-#     # 'Unique_GTIN_Count': pd.Series.nunique,
-#     # 'Unique_VendorNumberSAP': pd.Series.nunique,
-#     # 'Unique_ArticleLongName_Count': pd.Series.nunique    
-# }).reset_index()
-
-# print("test4")
-
-# Rename the 'ID' column to 'Category'
-# MaxedaAttributeID_aggregation_workflow_df.rename(columns={'ID': 'Category', 'GTIN': 'Unique_GTIN_Count', 'VendorNumberSAP': 'Unique_VendorNumberSAP', 'ArticleLongName': 'Unique_ArticleLongName_Count'}, inplace=True)
-# MaxedaAttributeID_aggregation_workflow_df.rename(columns={'ID': 'Category'}, inplace=True)
-
-Attribute_allIDs_aggregation_workflow_df = pd.merge(
-    MaxedaAttributeID_aggregation_workflow_df, 
-    maxeda_s7_df_scope[['ID','LookUp Table Name', 'Attribute Name', 'Attribute code']], 
+# print("test 4")
+brick_attributes_workflow_df3 = pd.merge(
+    brick_attributes_workflow_df2, 
+    maxeda_s7_df_scope[['ID', 'Attribute code']], 
     how='left', 
     on='ID'
 )
+# print(f'brick_attributes_workflow_df3: {brick_attributes_workflow_df3.head}')
 
-# # Create other relevant preliminary backlog data frames
-# # List of columns to process
-# columns_to_process = ['LookUp Table Name', 'Attribute Name']
-
-# print("test5")
-
-# # Dictionary to store the resulting DataFrames
-# result_dfs = {}
-# print("test6")
-# # Loop through each column to process
-# for column in columns_to_process:
-#     # Create a temporary DataFrame by copying 'MaxedaAttributeID_aggregation_workflow_df'
-#     # print(maxeda_s7_full_df[['ID', column]])
-#     # exit()
-
-#     temp_df = MaxedaAttributeID_aggregation_workflow_df.copy()
-    
-#     # Perform the merge
-#     temp_df = pd.merge(
-#         temp_df, 
-#         maxeda_s7_full_df[['ID', column]], 
-#         how='left', 
-#         left_on='Category', 
-#         right_on='ID'
-#     )
-    
-#     print(temp_df)
-#     exit()
-
-#     # Remove the 'Category' and 'ID' columns
-#     temp_df.drop(columns=['Category', 'ID'], inplace=True)
-    
-#     # Rename the column to 'Category'
-#     temp_df.rename(columns={column: 'Category'}, inplace=True)
-    
-#     # Drop rows where trimmed length of 'Category' is 0
-#     temp_df = temp_df[temp_df['Category'].str.strip().str.len() > 0].copy()
-    
-#     # Construct the DataFrame name
-#     df_name = column.lower().replace(" ", "_") + "_aggregation_workflow_df"
-    
-#     # Store the DataFrame in the dictionary
-#     result_dfs[df_name] = temp_df
-
-# print("test7")
-
-# # Extract the DataFrames from the dictionary
-# lookup_table_name_aggregation_workflow_df = result_dfs.get('look_up_table_name_aggregation_workflow_df')
-# attribute_name_aggregation_workflow_df = result_dfs.get('attribute_name_aggregation_workflow_df')
-
-# # Display the resulting DataFrames
-# print("DataFrame: lookup_table_name_aggregation_workflow_df")
-# print(lookup_table_name_aggregation_workflow_df)
-# print("\n")
-
-# print("DataFrame: attribute_name_aggregation_workflow_df")
-# print(attribute_name_aggregation_workflow_df)
-# print("\n")
+brick_attributes_workflow_df4 = pd.merge(
+    brick_attributes_workflow_df3, 
+    maxeda_s7_df_scope[['LookUp Table Name', 'Attribute code']], 
+    how='left', 
+    on='Attribute code'
+)
 
 # exit()
+
+# print("test 5")
+brick_attributes_aggregation_workflow_df_temp = brick_attributes_workflow_df3.groupby(['Brick', 'Attribute code']).agg({
+    'GTIN': pd.Series.nunique,
+    'VendorNumberSAP': pd.Series.nunique,
+    'ArticleLongName': pd.Series.nunique    
+}).reset_index()
+
+# Prefix all headers with 'unique_count_' for brick_attributes_aggregation_workflow_df
+brick_attributes_aggregation_workflow_df_temp.columns = ['unique_count_' + col if col not in ['Brick', 'Attribute code'] else col for col in brick_attributes_aggregation_workflow_df_temp.columns]
+
+# print(brick_attributes_aggregation_workflow_df_temp.head)
+# print(brick_attributes_workflow_df3.head)
+
+# exit()
+
+maxeda_s8_AttributePath_AttributeCode_mapping = brick_attributes_workflow_df3[['Attribute Path', 'Attribute code']].copy()
+maxeda_s8_AttributePath_AttributeCode_mapping = maxeda_s8_AttributePath_AttributeCode_mapping.drop_duplicates(subset='Attribute code')
+
+brick_attributes_aggregation_workflow_df = pd.merge(
+    brick_attributes_aggregation_workflow_df_temp, 
+    maxeda_s8_AttributePath_AttributeCode_mapping, 
+    how='left', 
+    on='Attribute code'
+)
+
+# print("test 6")
+attributes_aggregation_workflow_GS1_ID_df = brick_attributes_workflow_df3.groupby(['Attribute code']).agg({
+    'GTIN': pd.Series.nunique,
+    'VendorNumberSAP': pd.Series.nunique,
+    'ArticleLongName': pd.Series.nunique    
+}).reset_index()
+
+# Prefix all headers with 'unique_count_' for attributes_aggregation_workflow_GS1_ID_df
+attributes_aggregation_workflow_GS1_ID_df.columns = ['unique_count_' + col if col != 'Attribute code' else col for col in attributes_aggregation_workflow_GS1_ID_df.columns]
+
+# print("test 7")
+attributes_aggregation_workflow_ALL_ID_df = pd.merge(
+    attributes_aggregation_workflow_GS1_ID_df, 
+    maxeda_s7_df_scope[['ID', 'Attribute Name', 'Attribute code']], 
+    how='left', 
+    on='Attribute code'
+)
+
+attributes_aggregation_workflow_lookuptable_df = brick_attributes_workflow_df4.groupby(['LookUp Table Name']).agg({
+    'GTIN': pd.Series.nunique,
+    'VendorNumberSAP': pd.Series.nunique,
+    'ArticleLongName': pd.Series.nunique    
+}).reset_index()
+
+# Prefix all headers with 'unique_count_' for attributes_aggregation_workflow_GS1_ID_df
+attributes_aggregation_workflow_lookuptable_df.columns = ['unique_count_' + col if col != 'LookUp Table Name' else col for col in attributes_aggregation_workflow_lookuptable_df.columns]
+
+
+maxeda_s23_df_selected = maxeda_s23_df[['ID', 'Table Name']]
+maxeda_s23_df_selected = maxeda_s23_df_selected.drop_duplicates()   
+
+
+attributes_aggregation_workflow_lookuptable_df = pd.merge(
+    attributes_aggregation_workflow_lookuptable_df, 
+    maxeda_s23_df_selected[['ID', 'Table Name']], 
+    how='left', 
+    left_on='LookUp Table Name',
+    right_on='Table Name',
+)
+
+# print(f'attributes_aggregation_workflow_ALL_ID_df: {attributes_aggregation_workflow_ALL_ID_df.head}')
+
+
+# print(attributes_aggregation_workflow_ALL_ID_df.columns)
+# print(attributes_aggregation_workflow_ALL_ID_df.head)
+
+
+# exit()
+
+
+# print("test")
+# # Group by 'Brick' and count unique values of 'GTIN', 'ArticleLongName', and 'VendorNumberSAP'
+# brick_workflow_total_df = workflowSKUs_df.groupby('Brick').agg({
+#     'GTIN': pd.Series.nunique,
+#     'VendorNumberSAP': pd.Series.nunique,
+#     'ArticleLongName': pd.Series.nunique    
+# }).reset_index()
+
+
+
+# # Rename columns for clarity
+# brick_aggregation_workflow_total_df.columns = ['Brick', 'Unique_GTIN_Count', 'Unique_VendorNumberSAP', 'Unique_ArticleLongName_Count']
+
+# # brick_workflow_total_df = workflowSKUs_df.copy()
+# print("test1")
+
+# brick_aggregation_workflow_with_attributes_df_temp = pd.merge(
+#     brick_aggregation_workflow_total_df,
+#     maxeda_s14_df[['Category Name', 'Attribute Path']],
+#     how='inner',
+#     left_on='Brick',
+#     right_on='Category Name'
+# )
+# brick_aggregation_workflow_with_attributes_df_temp.drop(columns=['Category Name'], inplace=True)
+# # print(brick_workflow_with_attributes_df.columns)
+# print("test2")
+
+# # Perform the left join on 'Attribute Path' and select only the required columns
+# brick_aggregation_workflow_with_attributes_df_temp2 = pd.merge(
+#     brick_aggregation_workflow_with_attributes_df_temp, 
+#     maxeda_s8_full_df[['Attribute Path', 'ID']], 
+#     how='left', 
+#     on='Attribute Path'
+# )
+
+# brick_aggregation_workflow_with_attributes_df_temp2 = brick_aggregation_workflow_with_attributes_df_temp2.drop_duplicates(subset=['Attribute Path', 'ID', 'Brick'])
+
+# brick_aggregation_workflow_with_attributes_df = pd.merge(
+#     brick_aggregation_workflow_with_attributes_df_temp2, 
+#     maxeda_s7_df_scope[['ID', 'Attribute code']], 
+#     how='left', 
+#     on='ID'
+# )
+
+# # Group by 'ID' and sum the relevant columns
+# MaxedaAttributeID_aggregation_workflow_df = brick_aggregation_workflow_with_attributes_df.groupby(['ID', 'Attribute code']).agg({
+#     'Unique_GTIN_Count': 'sum',
+#     'Unique_VendorNumberSAP': 'sum',
+#     'Unique_ArticleLongName_Count': 'sum'
+# }).reset_index()
+# print("test3")
+
+
+# Attribute_allIDs_aggregation_workflow_df = pd.merge(
+#     MaxedaAttributeID_aggregation_workflow_df, 
+#     maxeda_s7_df_scope[['ID','LookUp Table Name', 'Attribute Name', 'Attribute code']], 
+#     how='left', 
+#     on='ID'
+# )
 
 
 ####################
@@ -856,7 +936,14 @@ gs1_df_attributes_processed['ONEWS_Is Localizable'] = np.where(gs1_df_attributes
 
 gs1_df_attributes_processed.fillna('', inplace=True)
 
+# Check if 'Attributename English' column has the value 'Battery size type code'
+mask = gs1_df_attributes_processed['Attributename English'] == 'Battery size type code'
 
+# Print 'Picklist ID' for rows where the condition is true
+# if mask.any():
+#     print(gs1_df_attributes_processed[mask]['Picklist ID'].values[0])
+
+# exit()
 
 ####################
 ## S7 
@@ -868,6 +955,15 @@ maxeda_s7_df_category = maxeda_s7_df_scope[maxeda_s7_df_scope['Attribute Type'] 
 # Create a set from this
 maxeda_attribute_s7_GS1ID_set = set(maxeda_s7_df_category['Attribute code'].replace('', np.nan).dropna())
 
+
+# # Check if 'BatteryTypeCode' is in the set
+# if '8.384' in maxeda_attribute_s7_GS1ID_set:
+#     print("'BatteryTypeCode' is in the set maxeda_attribute_s7_GS1ID_set")
+# else:
+#     print("'BatteryTypeCode' is not in the set maxeda_attribute_s7_GS1ID_set")
+
+# exit()
+
     ####################
     ## Establish set of attributes for 1) additions, 2) deletions, and 3) overlapping 
     ####################
@@ -876,6 +972,21 @@ attribute_add_s7_GS1ID_set = gs1_attributes_GS1ID_set - maxeda_attribute_s7_GS1I
 attribute_delete_s7_GS1ID_set = maxeda_attribute_s7_GS1ID_set - gs1_attributes_GS1ID_set
 attribute_overlap_s7_GS1ID_set = gs1_attributes_GS1ID_set & maxeda_attribute_s7_GS1ID_set
 
+# # Check if 'BatteryTypeCode' is in the set
+# if '8.384' in gs1_attributes_GS1ID_set:
+#     print("'BatteryTypeCode' is in the set gs1_attributes_GS1ID_set")
+# else:
+#     print("'BatteryTypeCode' is not in the set gs1_attributes_GS1ID_set")
+#     print(gs1_attributes_GS1ID_set)
+
+# # Check if 'BatteryTypeCode' is in the set
+# if '8.384' in attribute_add_s7_GS1ID_set:
+#     print("'BatteryTypeCode' is in the set attribute_add_s7_GS1ID_set")
+# else:
+#     print("'BatteryTypeCode' is not in the set attribute_add_s7_GS1ID_set")
+#     print(attribute_add_s7_GS1ID_set)
+
+# exit()
 
     ####################
     ## Delete
@@ -887,22 +998,28 @@ delete_attributes_s7_df_temp = maxeda_s7_df_scope[maxeda_s7_df_scope['Attribute 
 delete_attributes_s7_df_temp ['Action'] = 'Delete'
 
 # Filter delete_attributes_s7_df to exclude rows with IDs found in MaxedaAttributeID_aggregation_workflow_df['Category']
-delete_attributes_s7_df = delete_attributes_s7_df_temp[~delete_attributes_s7_df_temp['ID'].isin(Attribute_allIDs_aggregation_workflow_df['ID'])].copy()
+delete_attributes_s7_df = delete_attributes_s7_df_temp[~delete_attributes_s7_df_temp['ID'].isin(attributes_aggregation_workflow_ALL_ID_df['ID'])].copy()
 
 
 # Create backlog items for attribute deletions
     # Find the overlap
-backlog_delete_attributes_s7_ID_set = set(delete_attributes_s7_df_temp['ID']).intersection(set(Attribute_allIDs_aggregation_workflow_df['ID']))
-backlog_attribute_deletions = Attribute_allIDs_aggregation_workflow_df[Attribute_allIDs_aggregation_workflow_df['ID'].isin(backlog_delete_attributes_s7_ID_set)].copy()
+backlog_delete_attributes_s7_ID_set = set(delete_attributes_s7_df_temp['ID']).intersection(set(attributes_aggregation_workflow_ALL_ID_df['ID']))
+backlog_attribute_deletions = attributes_aggregation_workflow_ALL_ID_df[attributes_aggregation_workflow_ALL_ID_df['ID'].isin(backlog_delete_attributes_s7_ID_set)].copy()
 backlog_attribute_deletions['Level'] = 'Attribute'
-backlog_attribute_deletions['Reason_backlog'] = 'Attribute deletion'
+backlog_attribute_deletions['Reason'] = 'Attribute deletion'
 
+backlog_attribute_deletions['Category'] = (
+    backlog_attribute_deletions['Attribute code'] + ' - ' +
+    backlog_attribute_deletions['ID'].astype(str) + ' - ' +
+    backlog_attribute_deletions['Attribute Name']
+)
 
 final_backlog_df = pd.concat([final_backlog_df, backlog_attribute_deletions], ignore_index=True)
 
 # Create sets for re-use later
 attribute_delete_s7_MaxedaIDs_set = set(delete_attributes_s7_df['ID'].dropna())
 attribute_delete_s7_AttributeName_set = set(delete_attributes_s7_df['Attribute Name'].dropna())
+
 filtered_df = delete_attributes_s7_df_temp[delete_attributes_s7_df_temp['ID'].isin(backlog_delete_attributes_s7_ID_set)]
 attribute_delete_s7_AttributeName_backlog_set = set(filtered_df['Attribute Name'].dropna())
 
@@ -913,11 +1030,20 @@ attribute_delete_s7_LookupTableName_backlog_set = set(filtered_df['LookUp Table 
 attribute_delete_s7_LookupTableName_set.discard('YesNo')
 attribute_delete_s7_LookupTableName_backlog_set.discard('YesNo')
 
+
     ####################
     ## Additions
     ####################
 print(f'## Additions - S7 ##')
 def add_attributes_s7(add_set, all_additions_attributes_s7_df):
+
+    # # Check if 'BatteryTypeCode' is in the set
+    # if '8.384' in add_set:
+    #     print("'BatteryTypeCode' is in the set")
+    # else:
+    #     print("'BatteryTypeCode' is not in the set")
+
+    # exit()
 
     additions_attributes_s7_df = gs1_df_attributes_processed[gs1_df_attributes_processed['FieldID'].isin(add_set)].copy()
 
@@ -1216,6 +1342,21 @@ LookupTable_delete_total_set = attribute_delete_s7_LookupTableName_set.union(s7_
 # Combine the sets of added picklists and exiting attributes changed format TO Picklist from something else
 LookupTable_add_total_set = s7_add_picklist_ID_set.union(s7_change_to_picklist_ID_set)
 
+# # Check if 'BatteryTypeCode' is in the set
+# if 'BatteryTypeCode' in s7_add_picklist_ID_set:
+#     print("'BatteryTypeCode' is in the set")
+# else:
+#     print("'BatteryTypeCode' is not in the set")
+
+# # Check if 'BatteryTypeCode' is in the set
+# if 'BatteryTypeCode' in s7_change_to_picklist_ID_set:
+#     print("'BatteryTypeCode' is in the set")
+# else:
+#     print("'BatteryTypeCode' is not in the set")
+
+# exit()
+
+
 # Create a new DataFrame with the same columns as maxeda_s23_df
 maxeda_s23_total_df = pd.DataFrame(columns=maxeda_s23_df.columns)
 
@@ -1235,10 +1376,15 @@ maxeda_s23_total_df = pd.concat([maxeda_s23_total_df, maxeda_s23_delete_df], ign
 
 
 # Create backlog items for S23
-backlog_s23_deletions = Attribute_allIDs_aggregation_workflow_df[Attribute_allIDs_aggregation_workflow_df['LookUp Table Name'].isin(attribute_delete_s7_LookupTableName_backlog_set)].copy()
+backlog_s23_deletions = attributes_aggregation_workflow_lookuptable_df[attributes_aggregation_workflow_lookuptable_df['LookUp Table Name'].isin(attribute_delete_s7_LookupTableName_backlog_set)].copy()
 # backlog_s23_deletions = backlog_s23_deletions[backlog_s23_deletions['Category'] != 'YesNo']
 backlog_s23_deletions['Level'] = 'Lookup Table (& values)'
-backlog_s23_deletions['Reason_backlog'] = 'Lookup Table deletion (& its values)'
+backlog_s23_deletions['Reason'] = 'Lookup Table deletion (& its values)'
+
+backlog_s23_deletions['Category'] = (
+    backlog_s23_deletions['ID'].astype(str) + ' - ' +
+    backlog_s23_deletions['LookUp Table Name']
+)
 
 final_backlog_df = pd.concat([final_backlog_df, backlog_s23_deletions], ignore_index=True)
 
@@ -1247,8 +1393,8 @@ final_backlog_df = pd.concat([final_backlog_df, backlog_s23_deletions], ignore_i
     #######################
 print(f'## Additions - S23 ##')
 
-print(LookupTable_add_total_set)
-print(len(LookupTable_add_total_set))
+# print(LookupTable_add_total_set)
+# print(len(LookupTable_add_total_set))
 
 # exit()
 
@@ -1265,6 +1411,14 @@ for picklist_id, lookup_table_name in LookupTable_add_total_set:
     # Find the corresponding data type and precision from gs1_df_attributes_processed
     match = gs1_df_attributes_processed[gs1_df_attributes_processed['Picklist ID'] == picklist_id]
     data_type = match['Data Type'].values[0] if not match.empty else None
+
+    # # Check if 'Attributename English' column has the value 'Battery size type code'
+    # mask = match['Attributename English'] == 'Battery size type code'
+
+    # # Print 'Picklist ID' for rows where the condition is true
+    # if mask.any():
+    #     print(match[mask]['Picklist ID'].values[0])
+    #     exit()
     
     width = 500
     precision = 0
@@ -1309,10 +1463,20 @@ for picklist_id, lookup_table_name in LookupTable_add_total_set:
     all_additions_attributes_s23_df = pd.concat([all_additions_attributes_s23_df, pd.DataFrame([first_row]), pd.DataFrame([second_row])], ignore_index=True)
 
     maxeda_s23_total_df = pd.concat([maxeda_s23_total_df, all_additions_attributes_s23_df], ignore_index=True)
- 
+
+# # Check if 'Attributename English' column has the value 'Battery size type code'
+# mask = all_additions_attributes_s23_df['Attributename English'] == 'Battery size type code'
+
+# # Print 'Picklist ID' for rows where the condition is true
+# if mask.any():
+#     print(all_additions_attributes_s23_df[mask]['Picklist ID'].values[0])
+#     exit()
+
 #######################
 ## S14
 #######################
+
+print(f'\n  ### Process S14 ###')
 
 # Obtain the GS1 attribute ID
 maxeda_s14_df = pd.merge(
@@ -1321,6 +1485,8 @@ maxeda_s14_df = pd.merge(
     how='left',
     on = 'Attribute Path'
 )
+
+maxeda_s14_df = maxeda_s14_df.drop_duplicates()   
 
 maxeda_s14_df = pd.merge(
     maxeda_s14_df,
@@ -1342,27 +1508,27 @@ maxeda_s7_df_scope = maxeda_s7_df_scope[~maxeda_s7_df_scope['Attribute code'].st
 maxeda_brick_attribute_set = set(zip(maxeda_s14_df['Category Name'], maxeda_s14_df['Attribute code']))
 gs1_brick_attribute_set = set(zip(gs1_df_attributes_brick_active['Brick'], gs1_df_attributes_brick_active['FieldID']))
 
-# Define the target substring
-target_substring = '10001688'
+# # Define the target substring
+# target_substring = '10001688'
 
-# Check if the target substring is in the first item of any tuple in maxeda_brick_attribute_set
-contains_target_substring = any(target_substring in item[0] for item in maxeda_brick_attribute_set)
-print(f"Does any 'Category Name' in maxeda_brick_attribute_set contain '{target_substring}'? {contains_target_substring}")
-contains_target_substring = any(target_substring in item[0] for item in gs1_brick_attribute_set)
-print(f"Does any 'Category Name' in gs1_brick_attribute_set contain '{target_substring}'? {contains_target_substring}")
+# # Check if the target substring is in the first item of any tuple in maxeda_brick_attribute_set
+# contains_target_substring = any(target_substring in item[0] for item in maxeda_brick_attribute_set)
+# print(f"Does any 'Category Name' in maxeda_brick_attribute_set contain '{target_substring}'? {contains_target_substring}")
+# contains_target_substring = any(target_substring in item[0] for item in gs1_brick_attribute_set)
+# print(f"Does any 'Category Name' in gs1_brick_attribute_set contain '{target_substring}'? {contains_target_substring}")
 
 brick_attribute_delete_temp_set = maxeda_brick_attribute_set - gs1_brick_attribute_set
 brick_attribute_add_set = gs1_brick_attribute_set - maxeda_brick_attribute_set
 # brick_attribute_overlap_set = gs1_brick_attribute_set & maxeda_brick_attribute_set
 
-contains_target_substring = any(target_substring in item[0] for item in brick_attribute_delete_temp_set)
-print(f"Does any 'Category Name' in brick_attribute_delete_temp_set contain '{target_substring}'? {contains_target_substring}")
+# contains_target_substring = any(target_substring in item[0] for item in brick_attribute_delete_temp_set)
+# print(f"Does any 'Category Name' in brick_attribute_delete_temp_set contain '{target_substring}'? {contains_target_substring}")
 # exit()
 
 # print("maxeda_brick_attribute_set (first 10 items):", list(maxeda_brick_attribute_set)[:10])
 # print("gs1_brick_attribute_set (first 10 items):", list(gs1_brick_attribute_set)[:10])
-print(f'brick_attribute_delete_temp_set: {list(brick_attribute_delete_temp_set)[:10]}')
-print(f'brick_attribute_add_set: {list(brick_attribute_add_set)[:10]}')
+# print(f'brick_attribute_delete_temp_set: {list(brick_attribute_delete_temp_set)[:10]}')
+# print(f'brick_attribute_add_set: {list(brick_attribute_add_set)[:10]}')
 # print(f'brick_attribute_overlap_set: {list(brick_attribute_overlap_set)[:10]}')
 
 # Remove the workflow brick-attribute combinations from the delete set. It will not be put into the backlog as Brick and/or attribute deletion already is.
@@ -1371,31 +1537,31 @@ print(f'brick_attribute_add_set: {list(brick_attribute_add_set)[:10]}')
     # This way only the removed combinations will be present in the table. I.o.w. the attribute still exists but in other bricks.
 
 # Add the attribute to brick_aggregation_workflow_with_attributes_df which currently only contains the maxeda attribute ID
-brick_aggregation_workflow_with_GS1attributes_df = pd.merge(
-    brick_aggregation_workflow_with_attributes_df, 
-    maxeda_s7_df_scope[['ID', 'Attribute code']], 
-    how='left', 
-    on='ID',              
-)
+# brick_aggregation_workflow_with_GS1attributes_df = pd.merge(
+#     brick_aggregation_workflow_with_attributes_df, 
+#     maxeda_s7_df_scope[['ID', 'Attribute code']], 
+#     how='left', 
+#     on='ID',              
+# )
 
 # print(brick_aggregation_workflow_with_GS1attributes_df)
 # exit()
 
 # Produce set to exclude from deletion
 # print(Attribute_allIDs_aggregation_workflow_df.head())
-brick_attribute_delete_workflow_set = set(zip(brick_aggregation_workflow_with_GS1attributes_df['Brick'], brick_aggregation_workflow_with_GS1attributes_df['Attribute code']))
+brick_attribute_delete_workflow_set = set(zip(brick_attributes_aggregation_workflow_df['Brick'], brick_attributes_aggregation_workflow_df['Attribute code']))
 brick_attribute_delete_set = brick_attribute_delete_temp_set - brick_attribute_delete_workflow_set
 brick_attribute_delete_backlog_set = brick_attribute_delete_temp_set - brick_attribute_delete_set
 
-print(f'brick_attribute_delete_workflow_set: {list(brick_attribute_delete_workflow_set)[:10]}')
-print(f'brick_attribute_delete_set: {list(brick_attribute_delete_set)[:10]}')
+# print(f'brick_attribute_delete_workflow_set: {list(brick_attribute_delete_workflow_set)[:10]}')
+# print(f'brick_attribute_delete_set: {list(brick_attribute_delete_set)[:10]}')
 # print(f'brick_attribute_delete_backlog_set: {list(brick_attribute_delete_backlog_set)[:10]}')
 
 
     #######################
     ## Delete
     #######################
-
+print(f'## Deletions - S14 ##')
 # Use a boolean mask to filter S14 rows for deletion
 mask = maxeda_s14_df.apply(
     lambda row: (row['Category Name'], row['Attribute code']) in brick_attribute_delete_set,
@@ -1409,8 +1575,8 @@ maxeda_s14_delete_df['Action'] = 'Delete'
 # To be deleted bricks and attributes are already included in their respective backlogs and should therefore be excluded in this backlog
     # A next run of the script, after resovling the backlogs of brick and attributes, will organically delete the 'old' combinations
 
-# Create a set from the brick backlog
-bricks_to_exclude_set = set(final_backlog_df.loc[final_backlog_df['Reason_backlog'] == 'Brick deletion', 'Category'])
+# Create a set from the brick backlog.
+bricks_to_exclude_set = set(final_backlog_df.loc[final_backlog_df['Reason'] == 'Brick deletion', 'Category'])
 
 # Filter the set to exclude tuples where the first item is in categories_to_exclude
 final_brick_attribute_delete_backlog_temp_set = {
@@ -1419,14 +1585,13 @@ final_brick_attribute_delete_backlog_temp_set = {
 }
 
 # Create a set from the attribute backlog
-
 attributes_to_exclude_df = backlog_attribute_deletions.merge(
     maxeda_s7_df_scope[['ID', 'Attribute code']],
     on='ID',
     how='left'
 )         
 
-print(attributes_to_exclude_df.head())
+# print(attributes_to_exclude_df.head())
 
 attributes_to_exclude_set = set(attributes_to_exclude_df['Attribute code_x'])
 
@@ -1436,50 +1601,50 @@ final_brick_attribute_delete_backlog_set = {
     if item[1] not in attributes_to_exclude_set
 }
 
-print(len(brick_attribute_delete_backlog_set))
-print(len(final_brick_attribute_delete_backlog_set))
+# print(len(brick_attribute_delete_backlog_set))
+# print(len(final_brick_attribute_delete_backlog_set))
 # exit()
 
-print(f'maxeda_s14_df: {len(maxeda_s14_df)}')
-print(f'maxeda_s14_delete_df: {len(maxeda_s14_delete_df)}')
-print(f'bricks_to_exclude: {len(bricks_to_exclude_set)}')
-print(f'attributes_to_exclude: {len(attributes_to_exclude_set)}')
+# print(f'maxeda_s14_df: {len(maxeda_s14_df)}')
+# print(f'maxeda_s14_delete_df: {len(maxeda_s14_delete_df)}')
+# print(f'bricks_to_exclude: {len(bricks_to_exclude_set)}')
+# print(f'attributes_to_exclude: {len(attributes_to_exclude_set)}')
 
-print(f'maxeda_s14_delete_df: {maxeda_s14_delete_df[:10]}')
-print(f'brick_attribute_delete_backlog_set: {list(brick_attribute_delete_backlog_set)[:10]}')
-print(f'bricks_to_exclude: {bricks_to_exclude_set}')
-print(f'attributes_to_exclude: {attributes_to_exclude_set}')
-print(f'final_brick_attribute_delete_backlog_set: {list(final_brick_attribute_delete_backlog_set)[:10]}')
+# print(f'maxeda_s14_delete_df: {maxeda_s14_delete_df[:10]}')
+# print(f'brick_attribute_delete_backlog_set: {list(brick_attribute_delete_backlog_set)[:10]}')
+# print(f'bricks_to_exclude: {bricks_to_exclude_set}')
+# print(f'attributes_to_exclude: {attributes_to_exclude_set}')
+# print(f'final_brick_attribute_delete_backlog_set: {list(final_brick_attribute_delete_backlog_set)[:10]}')
 
-# Remove the workflow brick-attribute combinations from the delete set. It will not be put into the backlog as Brick and/or attribute deletion already is.
 
-print(Attribute_allIDs_aggregation_workflow_df.columns())
+# print(attributes_aggregation_workflow_GS1_ID_df.columns)
 # Use a boolean mask to filter the rows
-mask = Attribute_allIDs_aggregation_workflow_df.apply(
-    lambda row: (row['Brick'], row['Attribute code_x']) in final_brick_attribute_delete_backlog_set,
+mask = brick_attributes_aggregation_workflow_df.apply(
+    lambda row: (row['Brick'], row['Attribute code']) in final_brick_attribute_delete_backlog_set,
     axis=1
 )
 
 # Select the rows based on the mask
-brick_attribute_backlog = Attribute_allIDs_aggregation_workflow_df[mask]
+brick_attribute_backlog = brick_attributes_aggregation_workflow_df[mask].copy()
 brick_attribute_backlog['Level'] = 'Brick-Attribute'
 brick_attribute_backlog['Reason'] = 'Delete Brick-Attribute'
 
 # Create the 'Category' column by concatenating 'Brick' and 'Attribute Path'
-brick_attribute_backlog['Category'] = brick_attribute_backlog['Brick'] + ' - ' + brick_attribute_backlog['Attribute Path']
+brick_attribute_backlog['Category'] = brick_attribute_backlog['Brick'] + ' - ' + brick_attribute_backlog['Attribute code'] + ' - ' + brick_attribute_backlog['Attribute Path']
 
 # Select and reorder the columns
-selected_columns = ['Category', 'Unique_GTIN_Count', 'Unique_VendorNumberSAP', 'Unique_ArticleLongName_Count', 'Level', 'Reason']
+selected_columns = ['Category', 'unique_count_GTIN', 'unique_count_VendorNumberSAP', 'unique_count_ArticleLongName', 'Level', 'Reason']
 brick_attribute_backlog = brick_attribute_backlog[selected_columns]
 
 final_backlog_df = pd.concat([final_backlog_df, brick_attribute_backlog], ignore_index=True)
 
-print("Filtered brick_aggregation_workflow_with_GS1attributes_df:")
-print(brick_attribute_backlog)
+# print("Filtered brick_aggregation_workflow_with_GS1attributes_df:")
+# print(brick_attribute_backlog.columns)
+# # exit()
 
-print(len(Attribute_allIDs_aggregation_workflow_df))
-print(len(brick_attribute_backlog))
-
+# # print(len(Attribute_allIDs_aggregation_workflow_df))
+# print(len(brick_attribute_backlog))
+# print(brick_attribute_backlog.head)
 
 # Define the path to save the Excel file
 output_file_path = 'filtered_brick_aggregation.xlsx'
@@ -1489,11 +1654,11 @@ brick_attribute_backlog.to_excel(output_file_path, index=False)
 
 # exit()
 
-print("maxeda_s14_delete_df:")
-print(maxeda_s14_delete_df)
+# print("maxeda_s14_delete_df:")
+# print(maxeda_s14_delete_df)
 
-print("brick_aggregation_workflow_with_GS1attributes_df:")
-print(Attribute_allIDs_aggregation_workflow_df[:10])
+# print("brick_aggregation_workflow_with_GS1attributes_df:")
+# print(Attribute_allIDs_aggregation_workflow_df[:10])
 
 # Only put those items on the backlog that do not belong to brick deletion or attribute deletion. 
     # These are allready on the backlog and will be organically processed
@@ -1514,13 +1679,13 @@ print(Attribute_allIDs_aggregation_workflow_df[:10])
     #######################
     ## Add
     #######################
-
+print(f'## Additions - S14 ##')
 # Initialize an empty list to store the rows for the new DataFrame
 new_rows = []
 
-print(new_brick_categories_s9.columns)
-print(maxeda_s9.columns)
-# exit()
+# print(new_brick_categories_s9.columns)
+# print(maxeda_s9.columns)
+# # exit()
 
 
 ### Concatenate the DataFrames old + new to find the corresponding meta-data
@@ -1539,8 +1704,8 @@ unique_parent_category_path_lookup_df.reset_index(drop=True, inplace=True)
 
 ## Attributes
 # Select only the necessary columns from both dataframes
-print(all_additions_attributes_s7_df.head())
-print(maxeda_s7_df_scope.head())
+# print(all_additions_attributes_s7_df.head())
+# print(maxeda_s7_df_scope.head())
 new_attributes_categories_selected = all_additions_attributes_s7_df[['FieldID', 'Attribute Name', 'Attribute Parent Name', 'Is Required', 'Allowed UOMs', 'Default UOM']]
 new_attributes_categories_selected = new_attributes_categories_selected.rename(columns={'FieldID': 'Attribute code'})
 maxeda_attributes_selected = maxeda_s7_df_scope[['Attribute code', 'Attribute Name', 'Attribute Parent Name', 'Is Required', 'Allowed UOMs', 'Default UOM']]
@@ -1565,7 +1730,7 @@ for brick, field_id in brick_attribute_add_set:
             'Hierarchy Name': '',
             'Category Name': brick,
             'Parent Category Path': filtered_new_brick_row['Parent Category Path'].values[0],
-            'Attribute Path': attribute_metadata['Attribute Parent Name'] + '//' + attribute_metadata['Attribute Name'],
+            'Attribute Path': attribute_metadata['Attribute Parent Name'].values[0] + '//' + attribute_metadata['Attribute Name'].values[0],
             'Attribute Long Name': '',
             'Is Required': attribute_metadata['Is Required'].values[0],
             'Is ReadOnly': '',
@@ -1594,16 +1759,16 @@ for brick, field_id in brick_attribute_add_set:
 add_S14_df = pd.DataFrame(new_rows)
 
 # Display the new DataFrame
-print(add_S14_df)
+# print(add_S14_df)
 
 # exit()
 
 
 
 ####################
-## LookupData
+## LookupData values
 ####################
-
+print(f'\n  ### Process - LookupData values ###')
 # print(f'### Lookup tables ###')
 maxeda_lookuptables_s7_set = set(maxeda_s7_df_scope['LookUp Table Name'].replace('', np.nan).dropna())
 
@@ -1635,7 +1800,7 @@ def read_all_excel_files(directory_path):
     
     for filename in tqdm(xlsx_files, desc="  ### Process Lookup table value files ###"):
         counter += 1 # for testing purposes
-        if counter < 10: # for testing purposes
+        if counter < 1000: # for testing purposes
             # print(f"counter LookupData files: {counter}")
             file_path = os.path.join(directory_path, filename)
             workbook = openpyxl.load_workbook(file_path, data_only=True)
@@ -1669,12 +1834,12 @@ def read_all_excel_files(directory_path):
                         filtered_valid_combinations = {code for pid, code in valid_combinations if pid == picklist_id}
 
                         # print("# Delete rows #")
-
-                        
+                    
                         
                         ##############################
                         ## Delete
                         ##############################
+                        # print(f'## Deletions - Lookuptable values ##')
                         # Define a function to filter rows and collect details of disregarded entries
                         def delete_combinations(row, filtered_valid_combinations):
                             # Check if the combination of 'Picklist ID' and the value in the second column is in the valid combinations
@@ -1690,22 +1855,35 @@ def read_all_excel_files(directory_path):
 
                         df.apply(delete_combinations, axis=1, args=(filtered_valid_combinations,))
 
+
                             ##############################
                             ## Integrate backlog
                             ##############################                       
 
+                        # Create a set of unique values from the 'LookUp Table Name' column
+                        lookup_table_name_workflow_set = set(attributes_aggregation_workflow_lookuptable_df['LookUp Table Name'].dropna())
+
                         ## Final deletions
                         # filter the backlog items out of the disregarded_entries
                         filtered_disregarded_entries = [
-                            entry for entry in disregarded_entries if entry['sheet_name'] in attribute_delete_s7_LookupTableName_set
+                            entry for entry in disregarded_entries if entry['sheet_name'] not in lookup_table_name_workflow_set
                         ]
+
+                        # if picklist_id == '6.660':
+                        #     print(f'filtered_valid_combinations: {filtered_valid_combinations}')
+                        #     print(f'disregarded_entries: {disregarded_entries}')
+                        #     print(f'filtered_disregarded_entries: {filtered_disregarded_entries}')
+                        #     exit()    
+
                         # Convert the filtered list to a DataFrame
                         disregarded_entries_df = pd.DataFrame(filtered_disregarded_entries)
+
+
                         # print(disregarded_entries_df)
                         # Restructure the table
                         if not disregarded_entries_df.empty:
                             disregarded_entries_df.drop(columns=['filename'], inplace=True)
-                            disregarded_entries_df.rename(columns={'sheet_name': 'Lookup Table', 'value': 'Value'}, inplace=True)
+                            disregarded_entries_df.rename(columns={'sheet_name': 'LookUp Table'}, inplace=True)
 
                             # Concatenate the current disregarded_entries_df with final_disregarded_entries_df
                             final_delete_lookup_values_df = pd.concat([final_delete_lookup_values_df, disregarded_entries_df], ignore_index=True)
@@ -1714,32 +1892,68 @@ def read_all_excel_files(directory_path):
                         ## Backlog
                         # Filter the disregarded entries based on the set
                         lookupvalues_backlog_list = [
-                            entry for entry in disregarded_entries if entry['sheet_name'] in attribute_delete_s7_LookupTableName_backlog_set
+                            entry for entry in disregarded_entries 
+                            if entry['sheet_name'] in lookup_table_name_workflow_set 
+                            and entry['sheet_name'] not in attribute_delete_s7_LookupTableName_backlog_set # Because it was already added to that backlog
                         ]
 
+                        
                         # Transform the filtered entries into the desired DataFrame format
                         lookupvalues_backlog_df = pd.DataFrame(lookupvalues_backlog_list)  # Define this within your loop
+
+                        # if not lookupvalues_backlog_df.empty:
+                        #     print(lookupvalues_backlog_df)
+                        #     # exit()
 
                         # Add the required columns
                         lookupvalues_backlog_df.insert(0, 'Category', sheet_name)  # Insert 'Category' at the first position
                         lookupvalues_backlog_df['Level'] = 'Lookup value'
                         lookupvalues_backlog_df['Reason'] = 'Lookup value deletion(s)'                  
 
+                        if sheet_name == 'Sowingperiod':
+                            print(len(lookupvalues_backlog_df))
                         # Merge with Attribute_allIDs_aggregation_workflow_df
                         lookupvalues_backlog_df = lookupvalues_backlog_df.merge(
-                            Attribute_allIDs_aggregation_workflow_df,
-                            on='Category',
+                            attributes_aggregation_workflow_lookuptable_df,
+                            left_on='Category',
+                            right_on='LookUp Table Name',
                             how='left'
-                        )                  
+                        )            
+                        if sheet_name == 'Sowingperiod':
+                            print(len(lookupvalues_backlog_df))
+                            # exit()
+                        # # if counter == 90:
+                        # print(lookupvalues_backlog_df.columns)
+                        # print(lookupvalues_backlog_df.head())
 
-                        # Remove the items that are already denoted in the S23 backlog
-                        lookupvalues_backlog_df = lookupvalues_backlog_df[~lookupvalues_backlog_df['Category'].isin(LookupTable_delete_total_set)]
+                        # # Example function to check for blank 'value' field in a DataFrame
+                        # def check_blank_value_in_dataframe(df):
+                        #     has_blank_value = False
+                        #     for index, row in df.iterrows():
+                        #         if pd.isnull(row['value']) or row['value'] == '':
+                        #             has_blank_value = True
+                        #             break
+                        #     return has_blank_value
 
-                        # if not lookupvalues_backlog_df.empty:
-                        #     print(lookupvalues_backlog_df)
-                            
+                        # # Example usage:
+                        # # Assuming disregarded_entries is populated somewhere in your code
+                        # is_value_blank = check_blank_value_in_dataframe(lookupvalues_backlog_df)
+
+                        # if is_value_blank:
+                        #     print("At least one item in disregarded_entries has a blank value. {}")
+                        # else:
+                        #     print("No item in disregarded_entries has a blank value.")
+                        # # exit()
+
+                        if not lookupvalues_backlog_df.empty:
+                            lookupvalues_backlog_df['Category'] = lookupvalues_backlog_df['Category'] + ' - ' + lookupvalues_backlog_df['value']
+                        # except KeyError as e:
+                        #     print(f"Error accessing 'value' column: {e}")
+                        
+                        # lookupvalues_backlog_df['Category'] = lookupvalues_backlog_df['Category'] + ' - ' + lookupvalues_backlog_df['value'].astype(str)
+                          
                         # Select and reorder the specified columns
-                        required_columns = ['Category', 'Unique_GTIN_Count', 'Unique_VendorNumberSAP', 'Unique_ArticleLongName_Count', 'Level', 'Reason']
+                        required_columns = ['Category', 'unique_count_GTIN', 'unique_count_VendorNumberSAP', 'unique_count_ArticleLongName', 'Level', 'Reason']
                         lookupvalues_backlog_df = lookupvalues_backlog_df[required_columns]
 
                         # if not lookupvalues_backlog_df.empty:
@@ -1761,6 +1975,7 @@ def read_all_excel_files(directory_path):
                         ##############################
                         ## Add
                         ##############################
+                        # print(f'## Additions - Lookuptable data ##')
                         # # Check if the DataFrame has at least two columns
                         if len(df.columns) < 2:     
                             print(f"Not enough columns in {filename} - {sheet_name}.")
@@ -1827,7 +2042,7 @@ directory_path = os.getenv('lookup_data')
 final_delete_lookup_values, final_delete_lookup_values_backlog, final_add_lookup_values = read_all_excel_files(directory_path)
 # delete_lookupdata_df = final_lookupdata_df.copy()
 
-print(final_add_lookup_values)
+# print(final_add_lookup_values)
 # exit()
 
 final_backlog_df = pd.concat([final_backlog_df, final_delete_lookup_values_backlog], ignore_index=True)
@@ -1838,17 +2053,18 @@ final_backlog_df = pd.concat([final_backlog_df, final_delete_lookup_values_backl
 
 
 #######################
-## CDB - MDM Mapping (GS1 to maxeda attribute mapping)
+## CDB - MDM Mapping 
 #######################
+print(f'\n  ### Process - CDB MDM Mapping ###')
 
     ##################
     ## Add
     ##################
-
+print(f'## Additions - CDB MDM Mapping ##')
 # Calculate the midpoint to split the DataFrame into two halves
 midpoint = len(all_additions_attributes_s7_df) // 2
 
-# Split the DataFrame into two halves
+# Split the DataFrame into two halves to divide Catspec from OneWS
 first_half = all_additions_attributes_s7_df.iloc[:midpoint].reset_index(drop=True)
 second_half = all_additions_attributes_s7_df.iloc[midpoint:].reset_index(drop=True)
 
@@ -1863,14 +2079,89 @@ cdb_mdm_add_df = pd.DataFrame({
     'MDMAttributeParentName//en_US': first_half['Attribute Parent Name'],
     'GS1AttributeShortName//en_US': first_half['Attribute Name OneWS'],
     'ContentType//en_US': 'Value',
-    'NeedUOMConversion//en_US': '',
+    'NeedUOMConversion//en_US': '', # to be checked
     'TargetUOM//en_US': first_half['Default UOM'],
     'IsLocalized//en_US': first_half['Is Localizable OneWS'],
     'PackageType//en_US': 'BASE_UNIT_OR_EACH',
-    'IsChild//en_US': ''
+    'IsChild//en_US': ''  # to be checked
 })
 
-print(cdb_mdm_add_df)
+# print(cdb_mdm_add_df)
+
+# print(second_half.columns)
+# exit()
+
+    ##################
+    ## Delete
+    ##################
+
+print(f'## Deletions - CDB MDM Mapping ##')
+# # Filter the set to keep only strings that start with "CatSpec_"
+# attribute_delete_s7_AttributeName_cdb_mdm_set = {s for s in attribute_delete_s7_AttributeName_set if s.startswith("CatSpec_")}
+
+cdb_mdm_delete_df = CDB_MDM_mapping_df[CDB_MDM_mapping_df['MDMAttributeShortName *'].isin(attribute_delete_s7_AttributeName_set)].copy()
+
+    ##################
+    ## Backlog
+    ##################
+# attribute_backlog_s7_AttributeName_cdb_mdm_set = {s for s in attribute_delete_s7_AttributeName_backlog_set if s.startswith("CatSpec_")}
+
+cdb_mdm_backlog_df = attributes_aggregation_workflow_ALL_ID_df[attributes_aggregation_workflow_ALL_ID_df['Attribute Name'].isin(attribute_delete_s7_AttributeName_backlog_set)].copy()
+
+cdb_mdm_backlog_df['Category'] = (
+    cdb_mdm_backlog_df['Attribute code'] + ' - ' +
+    cdb_mdm_backlog_df['ID'].astype(str) + ' - ' +
+    cdb_mdm_backlog_df['Attribute Name'] + ' - ' +
+    cdb_mdm_backlog_df['Attribute Name'].str.replace('CatSpec', 'OneWS').str.replace(' ', '')
+)
+
+cdb_mdm_backlog_df['Level'] = 'Mapping CDB-MDM-GS1'
+cdb_mdm_backlog_df['Reason'] = 'Deletion Mapping CDB-MDM-GS1'
+
+# print(cdb_mdm_delete_df)
+# print(cdb_mdm_backlog_df)
+# print(cdb_mdm_backlog_df.columns)
+
+final_backlog_df = pd.concat([final_backlog_df, cdb_mdm_backlog_df], ignore_index=True)
+
+
+# exit()
+
+
+#######################
+## CDB - GS1 Mapping (GS1 to maxeda attribute mapping)
+#######################
+print(f'\n  ### Process - CDB GS1 Mapping ###')
+ 
+    ##################
+    ## Add
+    ##################
+print(f'## Additions - CDB GS1 Mapping ##')
+# # Calculate the midpoint to split the DataFrame into two halves
+# midpoint = len(all_additions_attributes_s7_df) // 2
+
+# # Split the DataFrame into two halves to divide Catspec from OneWS
+# first_half = all_additions_attributes_s7_df.iloc[:midpoint].reset_index(drop=True)
+# second_half = all_additions_attributes_s7_df.iloc[midpoint:].reset_index(drop=True)
+
+# # Attach 'Attribute Name' of the second half to the first half
+# first_half['Attribute Name OneWS'] = second_half['Attribute Name']
+# first_half['Is Localizable OneWS'] = second_half['Is Localizable']
+# print(second_half)
+# exit()
+
+# Create the final DataFrame with specified headers and values
+cdb_gs1_add_df = pd.DataFrame({
+    'Id': '',
+    'LinkId *': '',
+    'GS1Tag//en_US': second_half['TagName'],
+    'GS1AttributeShortName//en_US': second_half['Attribute Name'],
+    'GS1AttributeParentName//en_US': second_half['Attribute Parent Name'],
+    'FieldId//en_US': second_half['FieldID'],
+    'IsChild//en_US': ''  # to be checked
+})
+
+# print(cdb_gs1_add_df)
 
 
 
@@ -1879,21 +2170,35 @@ print(cdb_mdm_add_df)
     ##################
 
 # Filter the set to keep only strings that start with "CatSpec_"
-attribute_delete_s7_AttributeName_cdb_mdm_set = {s for s in attribute_delete_s7_AttributeName_set if s.startswith("CatSpec_")}
+# attribute_delete_s7_AttributeName_cdb_gs1_set = {s for s in attribute_delete_s7_AttributeName_set if s.startswith("OneWS_")}
 
-cdb_mdm_delete_df = CDB_MDM_mapping_df[CDB_MDM_mapping_df['Physical Sheet Name'].isin(attribute_delete_s7_AttributeName_cdb_mdm_set)].copy()
+# print(f'attribute_delete_s7_AttributeName_set: {attribute_delete_s7_AttributeName_set}\n')
+# print(f'attribute_delete_s7_AttributeName_cdb_gs1_set: {attribute_delete_s7_AttributeName_cdb_gs1_set} \n')
+# print(f'CDB_GS1_mapping_df: {CDB_GS1_mapping_df}\n')
+# print(CDB_GS1_mapping_df['GS1AttributeShortName//en_US'])
 
-    ##################
-    ## Backlog
-    ##################
-attribute_backlog_s7_AttributeName_cdb_mdm_set = {s for s in attribute_delete_s7_AttributeName_backlog_set if s.startswith("CatSpec_")}
+cdb_gs1_delete_df = CDB_GS1_mapping_df[CDB_GS1_mapping_df['GS1AttributeShortName//en_US'].isin(attribute_delete_s7_AttributeName_set)].copy()
 
-cdb_mdm_backlog_df = Attribute_allIDs_aggregation_workflow_df[Attribute_allIDs_aggregation_workflow_df['Attribute Name'].isin(attribute_backlog_s7_AttributeName_cdb_mdm_set)].copy()
+# print(f'cdb_gs1_delete_df: {cdb_gs1_delete_df}')
+#     ##################
+#     ## Backlog
+#     ##################
+# attribute_backlog_s7_AttributeName_cdb_gs1_set = {s for s in attribute_delete_s7_AttributeName_backlog_set if s.startswith("OneWS_")}
 
-print(cdb_mdm_delete_df)
-print(cdb_mdm_backlog_df)
+# cdb_gs1_backlog_df = attributes_aggregation_workflow_ALL_ID_df[attributes_aggregation_workflow_ALL_ID_df['Attribute Name'].isin(attribute_backlog_s7_AttributeName_cdb_gs1_set)].copy()
 
-exit()
+# cdb_gs1_backlog_df['Category'] = (
+#     cdb_gs1_backlog_df['Attribute code'] + ' - ' +
+#     cdb_gs1_backlog_df['ID'].astype(str) + ' - ' +
+#     cdb_gs1_backlog_df['Attribute Name']
+# )
+
+# print(cdb_gs1_delete_df)
+# print(cdb_gs1_backlog_df)
+# print(cdb_gs1_backlog_df.columns)
+
+# final_backlog_df = pd.concat([final_backlog_df, cdb_gs1_backlog_df], ignore_index=True)
+
 
 #######################
 ## New lookup values for new lookup tables
@@ -1954,6 +2259,11 @@ with pd.ExcelWriter(output_file_path, engine='openpyxl') as writer:
 ############################
 print('## Write - backlog ##')
 output_file_path = os.path.join(output_folder, 'X_Backlog.xlsx')
+
+desired_columns = ['Category', 'unique_count_GTIN', 'unique_count_VendorNumberSAP',
+                   'unique_count_ArticleLongName', 'Level', 'Reason']
+
+final_backlog_df = final_backlog_df[desired_columns]
 
 with pd.ExcelWriter(output_file_path, engine='openpyxl') as writer:
     final_backlog_df.to_excel(writer, sheet_name='Backlog', index=False)
@@ -2028,7 +2338,7 @@ dataframes_s10 = {
 
 # Define counters for numbering the files
 new_file_counter = 1
-delete_file_counter = 15
+delete_file_counter = 17
 
 # Helper function to extract metadata information
 def extract_metadata(sheet_name):
@@ -2164,7 +2474,39 @@ with pd.ExcelWriter(os.path.join(output_folder, '8_Add_Attributes_S7andS8.xlsx')
     all_additions_attributes_s7_df.to_excel(writer, sheet_name='S7 - Attribute', index=False)
     all_additions_attributes_s8_df.to_excel(writer, sheet_name='S8 - Attribute - Locale', index=False)
 
-with pd.ExcelWriter(os.path.join(output_folder, '9_REQUIRES_DATA_MIGRATION_Change_Attributes_S7.xlsx'), engine='openpyxl') as writer:
+with pd.ExcelWriter(os.path.join(output_folder, '9_Add_CDB_MDM_Mapping.xlsx'), engine='openpyxl') as writer:
+    print("## Write - Additions - CDB_MDM_Mapping ##")
+
+    # Create metadata data frame
+    metadata_sheet = pd.DataFrame({
+        'LookupTableName': ['CDB_MDMAttributeMapping', 'CDB_GS1Attributes'],
+        'SheetName': ['CDB_MDMAttributeMapping', 'CDB_GS1Attributes'],
+        'Load Lookup?': ['Yes', 'Yes']
+    })
+
+    # Write the metadata DataFrame as the first sheet named 'Metadata'
+    metadata_sheet.to_excel(writer, sheet_name='Metadata', index=False)
+    cdb_mdm_add_df.to_excel(writer, sheet_name='CDB_MDMAttributeMapping', index=False)
+    cdb_gs1_add_df.to_excel(writer, sheet_name='CDB_GS1Attributes', index=False)
+    
+    
+with pd.ExcelWriter(os.path.join(output_folder, '10_Delete_CDB_MDM_Mapping.xlsx'), engine='openpyxl') as writer:
+    print("## Write - Additions - CDB_MDM_Mapping ##")
+
+    # Create metadata data frame
+    metadata_sheet = pd.DataFrame({
+        'LookupTableName': ['CDB_MDMAttributeMapping', 'CDB_GS1Attributes'],
+        'SheetName': ['CDB_MDMAttributeMapping', 'CDB_GS1Attributes'],
+        'Load Lookup?': ['Yes', 'Yes']
+    })
+
+    # Write the metadata DataFrame as the first sheet named 'Metadata'
+    metadata_sheet.to_excel(writer, sheet_name='Metadata', index=False)
+    cdb_mdm_delete_df.to_excel(writer, sheet_name='CDB_MDMAttributeMapping', index=False)
+    cdb_gs1_delete_df.to_excel(writer, sheet_name='CDB_GS1Attributes', index=False)
+    
+
+with pd.ExcelWriter(os.path.join(output_folder, '11_REQUIRES_DATA_MIGRATION_Change_Attributes_S7.xlsx'), engine='openpyxl') as writer:
     print("## Write - Additions - S7 & S8 + Changes S7 ##")
 
     # Create metadata data frame
@@ -2174,7 +2516,7 @@ with pd.ExcelWriter(os.path.join(output_folder, '9_REQUIRES_DATA_MIGRATION_Chang
 
     changes_s7_df.to_excel(writer, sheet_name='S7 - Attribute', index=False)
 
-with pd.ExcelWriter(os.path.join(output_folder, '10_Add_Brick_Attribute_Combinations_S14.xlsx'), engine='openpyxl') as writer:
+with pd.ExcelWriter(os.path.join(output_folder, '12_Add_Brick_Attribute_Combinations_S14.xlsx'), engine='openpyxl') as writer:
     print("## Write - Additions - S14 ##")
     
     # Create metadata data frame
@@ -2189,7 +2531,7 @@ with pd.ExcelWriter(os.path.join(output_folder, '10_Add_Brick_Attribute_Combinat
     ## Manual lookup table value deletion
     ############################
 print('## Write - manual - Lookup table value deletion ##')
-output_file_path = os.path.join(output_folder, '11_MANUAL_PROCESSING_Delete_LookupData_Values.xlsx')
+output_file_path = os.path.join(output_folder, '13_MANUAL_PROCESSING_Delete_LookupData_Values.xlsx')
 
 with pd.ExcelWriter(output_file_path, engine='openpyxl') as writer:
     final_delete_lookup_values.to_excel(writer, sheet_name='Lookup table value deletion', index=False)
@@ -2209,7 +2551,7 @@ with pd.ExcelWriter(output_file_path, engine='openpyxl') as writer:
 #         item['df'].to_excel(writer, sheet_name=item['sheet_name'], index=False)
 
 
-with pd.ExcelWriter(os.path.join(output_folder, '12_Delete_Brick_Attribute_Combinations_S14.xlsx'), engine='openpyxl') as writer:
+with pd.ExcelWriter(os.path.join(output_folder, '14_Delete_Brick_Attribute_Combinations_S14.xlsx'), engine='openpyxl') as writer:
     print("## Write - Deletions - S14 ##")
     
     # Create metadata data frame
@@ -2220,7 +2562,7 @@ with pd.ExcelWriter(os.path.join(output_folder, '12_Delete_Brick_Attribute_Combi
     maxeda_s14_delete_df.to_excel(writer, sheet_name='S14 - CAT - ATTR', index=False)
 
 
-with pd.ExcelWriter(os.path.join(output_folder, '13_Delete_LookupData_Tables_S23.xlsx'), engine='openpyxl') as writer:
+with pd.ExcelWriter(os.path.join(output_folder, '15_Delete_LookupData_Tables_S23.xlsx'), engine='openpyxl') as writer:
     print("## Write - Deletions - S23 ##")
     
     # Create metadata data frame
@@ -2241,7 +2583,7 @@ with pd.ExcelWriter(os.path.join(output_folder, '13_Delete_LookupData_Tables_S23
 
 #     delete_attributes_s8_df.to_excel(writer, sheet_name='S8 - Attribute - Locale', index=False)
 
-with pd.ExcelWriter(os.path.join(output_folder, '14_Delete_Attributes_S7_autotriggersS8.xlsx'), engine='openpyxl') as writer:
+with pd.ExcelWriter(os.path.join(output_folder, '16_Delete_Attributes_S7_autotriggersS8.xlsx'), engine='openpyxl') as writer:
     print("## Write - Deletions - Attributes S7 autotrigger S8 ##")
 
     # Create metadata data frame
